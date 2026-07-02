@@ -16,7 +16,7 @@ export interface ImageResult {
   mediumUrl?: string;
   photographer: string;
   photographerUrl: string;
-  /** Provider name (pexels, unsplash) */
+  /** Provider name (pexels, google) */
   source: string;
   width: number;
   height: number;
@@ -25,4 +25,6 @@ export interface ImageResult {
      * @nullable
      */
   alt?: string | null;
+  /** Relevance score 0-100 */
+  score: number;
 }

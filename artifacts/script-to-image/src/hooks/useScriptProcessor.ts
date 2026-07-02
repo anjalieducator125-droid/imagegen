@@ -17,10 +17,10 @@ export function useScriptProcessor() {
   const [isStopping, setIsStopping] = useState(false);
   const [currentLineIndex, setCurrentLineIndex] = useState(-1);
   const [parsedLines, setParsedLines] = useState<{ lineNumber: number; text: string }[]>([]);
-  
+
   const [settings, setSettings] = useState<Settings>({
     perPage: 4,
-    provider: 'pexels',
+    provider: 'auto',
     orientation: 'landscape',
     safeSearch: true
   });
@@ -45,14 +45,13 @@ export function useScriptProcessor() {
         data: {
           lineNumber: line.lineNumber,
           lineText: line.text,
-          query: line.text,
           provider: settings.provider,
           perPage: settings.perPage,
           orientation: settings.orientation,
           safeSearch: settings.safeSearch
         }
       });
-      
+
       setResults(prev => {
         const existing = prev.findIndex(r => r.lineNumber === line.lineNumber);
         if (existing >= 0) {
@@ -66,8 +65,8 @@ export function useScriptProcessor() {
     } catch (err) {
       console.error(`Failed line ${line.lineNumber}:`, err);
       toast({
-        title: "Error fetching images",
-        description: `Failed to fetch images for line ${line.lineNumber}.`,
+        title: `Line ${line.lineNumber} failed`,
+        description: "Could not fetch images — skipping and continuing.",
         variant: "destructive"
       });
       return false;
@@ -94,7 +93,7 @@ export function useScriptProcessor() {
 
       setCurrentLineIndex(i);
       const line = parsedLines[i];
-      
+
       // Skip if we already have results for this line
       if (results.some(r => r.lineNumber === line.lineNumber)) {
         continue;
@@ -106,7 +105,7 @@ export function useScriptProcessor() {
     setIsProcessing(false);
     setIsStopping(false);
     setCurrentLineIndex(-1);
-    
+
     if (!stopRequested.current) {
       toast({
         title: "Processing complete",
@@ -115,7 +114,7 @@ export function useScriptProcessor() {
     } else {
       toast({
         title: "Processing stopped",
-        description: `Stopped after ${currentLineIndex} lines.`,
+        description: "Stopped at your request.",
       });
     }
   };
@@ -128,7 +127,6 @@ export function useScriptProcessor() {
   const retryLine = async (lineNumber: number) => {
     const line = parsedLines.find(l => l.lineNumber === lineNumber);
     if (!line) return;
-    
     await processLine(line);
   };
 

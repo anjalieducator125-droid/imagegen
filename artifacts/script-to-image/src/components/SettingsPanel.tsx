@@ -10,19 +10,26 @@ interface SettingsPanelProps {
   disabled?: boolean;
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  auto:   "Auto (Best Match)",
+  google: "Google Images",
+  pexels: "Pexels",
+};
+
 export function SettingsPanel({ settings, setSettings, disabled }: SettingsPanelProps) {
   const { data: serverSettings } = useGetImageSettings();
+  const providers = serverSettings?.availableProviders ?? ["auto", "pexels"];
 
   return (
     <div className="flex flex-col gap-6 p-5 bg-card border rounded-lg shadow-sm">
       <h3 className="font-semibold text-sm tracking-tight text-card-foreground">Configuration</h3>
-      
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground uppercase tracking-wider">Images per line</Label>
-          <Select 
+          <Select
             disabled={disabled}
-            value={settings.perPage.toString()} 
+            value={settings.perPage.toString()}
             onValueChange={(val) => setSettings({ ...settings, perPage: parseInt(val, 10) })}
           >
             <SelectTrigger>
@@ -38,18 +45,18 @@ export function SettingsPanel({ settings, setSettings, disabled }: SettingsPanel
 
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground uppercase tracking-wider">Image Source</Label>
-          <Select 
+          <Select
             disabled={disabled}
-            value={settings.provider} 
+            value={settings.provider}
             onValueChange={(val) => setSettings({ ...settings, provider: val })}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select provider" />
             </SelectTrigger>
             <SelectContent>
-              {(serverSettings?.availableProviders || ['pexels']).map(provider => (
-                <SelectItem key={provider} value={provider}>
-                  {provider.charAt(0).toUpperCase() + provider.slice(1)}
+              {providers.map(p => (
+                <SelectItem key={p} value={p}>
+                  {PROVIDER_LABELS[p] ?? (p.charAt(0).toUpperCase() + p.slice(1))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -58,9 +65,9 @@ export function SettingsPanel({ settings, setSettings, disabled }: SettingsPanel
 
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground uppercase tracking-wider">Orientation</Label>
-          <Select 
+          <Select
             disabled={disabled}
-            value={settings.orientation} 
+            value={settings.orientation}
             onValueChange={(val: any) => setSettings({ ...settings, orientation: val })}
           >
             <SelectTrigger>
@@ -76,7 +83,7 @@ export function SettingsPanel({ settings, setSettings, disabled }: SettingsPanel
 
         <div className="flex items-center justify-between sm:justify-start sm:gap-4 h-full pt-6">
           <Label className="text-sm font-medium">Safe Search</Label>
-          <Switch 
+          <Switch
             checked={settings.safeSearch}
             onCheckedChange={(val) => setSettings({ ...settings, safeSearch: val })}
             disabled={disabled}

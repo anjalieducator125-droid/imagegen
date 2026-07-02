@@ -26,16 +26,14 @@ export const ImageSearchInputOrientation = {
 } as const;
 
 export interface ImageSearchInput {
-  /** The search query derived from the script line */
-  query: string;
   /** The line number in the script */
   lineNumber: number;
-  /** The original script line text */
+  /** The original script line text (any language) */
   lineText: string;
-  /** Image provider to use (pexels, unsplash) */
+  /** Provider preference: auto (best), google, pexels */
   provider?: string;
   /**
-     * Number of images to fetch
+     * Number of images to return
      * @minimum 1
      * @maximum 8
      */
@@ -44,6 +42,50 @@ export interface ImageSearchInput {
   orientation?: ImageSearchInputOrientation;
   /** Whether to enable safe search */
   safeSearch?: boolean;
+}
+
+export interface ScriptLineAnalysis {
+  /** Detected language code (e.g. "hi", "en") */
+  detectedLanguage: string;
+  /** Human-readable language name */
+  detectedLanguageName?: string;
+  /**
+     * English translation of the original text (null if already English)
+     * @nullable
+     */
+  translatedText?: string | null;
+  /** Optimized English search query generated from the line */
+  englishQuery: string;
+  /**
+     * Main subject of the scene
+     * @nullable
+     */
+  subject?: string | null;
+  /**
+     * Main action or activity
+     * @nullable
+     */
+  action?: string | null;
+  /**
+     * Location or setting
+     * @nullable
+     */
+  location?: string | null;
+  /**
+     * Key objects in the scene
+     * @nullable
+     */
+  objects?: string | null;
+  /**
+     * Mood or emotion of the scene
+     * @nullable
+     */
+  emotion?: string | null;
+  /**
+     * Time of day if detectable
+     * @nullable
+     */
+  timeOfDay?: string | null;
 }
 
 export interface ImageResult {
@@ -56,7 +98,7 @@ export interface ImageResult {
   mediumUrl?: string;
   photographer: string;
   photographerUrl: string;
-  /** Provider name (pexels, unsplash) */
+  /** Provider name (pexels, google) */
   source: string;
   width: number;
   height: number;
@@ -65,19 +107,24 @@ export interface ImageResult {
      * @nullable
      */
   alt?: string | null;
+  /** Relevance score 0-100 */
+  score: number;
 }
 
 export interface ImageSearchResult {
   lineNumber: number;
   lineText: string;
-  /** The actual query used for the search */
+  /** The English search query actually used */
   query: string;
   images: ImageResult[];
+  /** Primary provider used (or "multi" if merged) */
   provider: string;
   totalResults?: number;
+  analysis?: ScriptLineAnalysis;
 }
 
 export interface ImageSettings {
+  /** List of configured providers (auto, google, pexels) */
   availableProviders: string[];
   defaultProvider: string;
   maxPerPage?: number;

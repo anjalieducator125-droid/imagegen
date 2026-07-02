@@ -33,8 +33,11 @@ paths:
     post:
       operationId: searchImages
       tags: [images]
-      summary: Search images for a script line
-      description: Searches for images matching a script line query using configured providers
+      summary: Search images for a script line with AI-powered query generation
+      description: >
+        Detects the language, translates to English if needed, generates an
+        optimized search query, searches all configured providers in parallel,
+        scores results and returns the best images.
       requestBody:
         required: true
         content:
@@ -94,24 +97,21 @@ components:
 
     ImageSearchInput:
       type: object
-      required: [query, lineNumber, lineText]
+      required: [lineNumber, lineText]
       properties:
-        query:
-          type: string
-          description: The search query derived from the script line
         lineNumber:
           type: integer
           description: The line number in the script
         lineText:
           type: string
-          description: The original script line text
+          description: The original script line text (any language)
         provider:
           type: string
-          description: Image provider to use (pexels, unsplash)
-          default: pexels
+          description: "Provider preference: auto (best), google, pexels"
+          default: auto
         perPage:
           type: integer
-          description: Number of images to fetch
+          description: Number of images to return
           default: 4
           minimum: 1
           maximum: 8
@@ -125,9 +125,44 @@ components:
           description: Whether to enable safe search
           default: true
 
+    ScriptLineAnalysis:
+      type: object
+      required: [detectedLanguage, englishQuery]
+      properties:
+        detectedLanguage:
+          type: string
+          description: Detected language code (e.g. "hi", "en")
+        detectedLanguageName:
+          type: string
+          description: Human-readable language name
+        translatedText:
+          type: ["string", "null"]
+          description: English translation of the original text (null if already English)
+        englishQuery:
+          type: string
+          description: Optimized English search query generated from the line
+        subject:
+          type: ["string", "null"]
+          description: Main subject of the scene
+        action:
+          type: ["string", "null"]
+          description: Main action or activity
+        location:
+          type: ["string", "null"]
+          description: Location or setting
+        objects:
+          type: ["string", "null"]
+          description: Key objects in the scene
+        emotion:
+          type: ["string", "null"]
+          description: Mood or emotion of the scene
+        timeOfDay:
+          type: ["string", "null"]
+          description: Time of day if detectable
+
     ImageResult:
       type: object
-      required: [id, url, thumbnailUrl, photographer, photographerUrl, source, width, height]
+      required: [id, url, thumbnailUrl, photographer, photographerUrl, source, width, height, score]
       properties:
         id:
           type: string
@@ -146,7 +181,7 @@ components:
           type: string
         source:
           type: string
-          description: Provider name (pexels, unsplash)
+          description: Provider name (pexels, google)
         width:
           type: integer
         height:
@@ -154,6 +189,9 @@ components:
         alt:
           type: ["string", "null"]
           description: Alt text for the image
+        score:
+          type: number
+          description: Relevance score 0-100
 
     ImageSearchResult:
       type: object
@@ -165,15 +203,18 @@ components:
           type: string
         query:
           type: string
-          description: The actual query used for the search
+          description: The English search query actually used
         images:
           type: array
           items:
             $ref: "#/components/schemas/ImageResult"
         provider:
           type: string
+          description: Primary provider used (or "multi" if merged)
         totalResults:
           type: integer
+        analysis:
+          $ref: "#/components/schemas/ScriptLineAnalysis"
 
     ImageSettings:
       type: object
@@ -183,6 +224,7 @@ components:
           type: array
           items:
             type: string
+          description: List of configured providers (auto, google, pexels)
         defaultProvider:
           type: string
         maxPerPage:

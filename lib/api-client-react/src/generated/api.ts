@@ -141,8 +141,8 @@ export const getSearchImagesUrl = () => {
 }
 
 /**
- * Searches for images matching a script line query using configured providers
- * @summary Search images for a script line
+ * Detects the language, translates to English if needed, generates an optimized search query, searches all configured providers in parallel, scores results and returns the best images.
+ * @summary Search images for a script line with AI-powered query generation
  */
 export const searchImages = async (imageSearchInput: ImageSearchInput, options?: RequestInit): Promise<ImageSearchResult> => {
 
@@ -190,7 +190,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SearchImagesMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Search images for a script line
+ * @summary Search images for a script line with AI-powered query generation
  */
 export const useSearchImages = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof searchImages>>, TError,{data: BodyType<ImageSearchInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -6,13 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ImageResult } from './imageResult';
+import type { ScriptLineAnalysis } from './scriptLineAnalysis';
 
 export interface ImageSearchResult {
   lineNumber: number;
   lineText: string;
-  /** The actual query used for the search */
+  /** The English search query actually used */
   query: string;
   images: ImageResult[];
+  /** Primary provider used (or "multi" if merged) */
   provider: string;
   totalResults?: number;
+  analysis?: ScriptLineAnalysis;
 }

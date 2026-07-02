@@ -8,16 +8,14 @@
 import type { ImageSearchInputOrientation } from './imageSearchInputOrientation';
 
 export interface ImageSearchInput {
-  /** The search query derived from the script line */
-  query: string;
   /** The line number in the script */
   lineNumber: number;
-  /** The original script line text */
+  /** The original script line text (any language) */
   lineText: string;
-  /** Image provider to use (pexels, unsplash) */
+  /** Provider preference: auto (best), google, pexels */
   provider?: string;
   /**
-     * Number of images to fetch
+     * Number of images to return
      * @minimum 1
      * @maximum 8
      */

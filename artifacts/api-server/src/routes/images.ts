@@ -5,28 +5,353 @@ import { logger } from "../lib/logger";
 const router: IRouter = Router();
 
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
-const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GOOGLE_CX = process.env.GOOGLE_CX;
 
-function getAvailableProviders(): string[] {
-  const providers: string[] = [];
-  if (PEXELS_API_KEY) providers.push("pexels");
-  if (UNSPLASH_ACCESS_KEY) providers.push("unsplash");
-  return providers;
+// ---------------------------------------------------------------------------
+// In-memory result cache (10-minute TTL)
+// ---------------------------------------------------------------------------
+interface CacheEntry {
+  result: unknown;
+  timestamp: number;
+}
+const resultCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+function getCacheKey(lineText: string, perPage: number, orientation: string): string {
+  return `${lineText.trim().toLowerCase()}:${perPage}:${orientation}`;
 }
 
-function getDefaultProvider(): string {
-  const available = getAvailableProviders();
-  return available[0] ?? "pexels";
+function getFromCache(key: string): unknown | null {
+  const entry = resultCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    resultCache.delete(key);
+    return null;
+  }
+  return entry.result;
 }
 
-function cleanQuery(text: string): string {
-  // Use Unicode-aware regex so non-Latin scripts (Hindi, Arabic, etc.) are preserved
-  return text
+function setCache(key: string, result: unknown): void {
+  resultCache.set(key, { result, timestamp: Date.now() });
+  // Evict old entries if cache grows large
+  if (resultCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of resultCache) {
+      if (now - v.timestamp > CACHE_TTL_MS) resultCache.delete(k);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Language detection (Unicode range-based)
+// ---------------------------------------------------------------------------
+const DEVANAGARI_RE = /[\u0900-\u097F]/;
+const ARABIC_RE = /[\u0600-\u06FF]/;
+const CHINESE_RE = /[\u4E00-\u9FFF]/;
+const CYRILLIC_RE = /[\u0400-\u04FF]/;
+const GREEK_RE = /[\u0370-\u03FF]/;
+
+function detectLanguage(text: string): { code: string; name: string } {
+  if (DEVANAGARI_RE.test(text)) return { code: "hi", name: "Hindi" };
+  if (ARABIC_RE.test(text)) return { code: "ar", name: "Arabic" };
+  if (CHINESE_RE.test(text)) return { code: "zh", name: "Chinese" };
+  if (CYRILLIC_RE.test(text)) return { code: "ru", name: "Russian" };
+  if (GREEK_RE.test(text)) return { code: "el", name: "Greek" };
+  return { code: "en", name: "English" };
+}
+
+// ---------------------------------------------------------------------------
+// Google Cloud Translation API
+// ---------------------------------------------------------------------------
+interface GoogleTranslateResponse {
+  data: {
+    translations: Array<{
+      translatedText: string;
+      detectedSourceLanguage?: string;
+    }>;
+  };
+}
+
+async function translateToEnglish(text: string): Promise<string | null> {
+  // 1) Try the official Google Cloud Translation API if key is available
+  if (GOOGLE_API_KEY) {
+    try {
+      const url = `https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_API_KEY}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: text, target: "en", format: "text" }),
+      });
+      if (response.ok) {
+        const data = (await response.json()) as GoogleTranslateResponse;
+        const translated = data.data?.translations?.[0]?.translatedText ?? null;
+        if (translated) return translated;
+      } else {
+        logger.warn({ status: response.status }, "Google Cloud Translate returned error — trying free endpoint");
+      }
+    } catch (err) {
+      logger.warn({ err }, "Google Cloud Translate call failed — trying free endpoint");
+    }
+  }
+
+  // 2) Fallback: unofficial free Google Translate endpoint (no key required)
+  try {
+    const encoded = encodeURIComponent(text);
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encoded}`;
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!response.ok) {
+      logger.warn({ status: response.status }, "Free translate endpoint failed");
+      return null;
+    }
+    // Response format: [[["translated","original",...], ...], ...]
+    const data = (await response.json()) as Array<Array<Array<string>>>;
+    const sentences = data?.[0];
+    if (!Array.isArray(sentences)) return null;
+    const translation = sentences
+      .map((chunk) => (Array.isArray(chunk) ? chunk[0] : ""))
+      .join("")
+      .trim();
+    return translation || null;
+  } catch (err) {
+    logger.warn({ err }, "Free translate endpoint call failed");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keyword extraction — removes stopwords, produces a concise image search query
+// ---------------------------------------------------------------------------
+const STOPWORDS = new Set([
+  "a","an","the","is","was","were","it","he","she","they","his","her",
+  "their","its","this","that","those","these","and","or","but","in","on",
+  "at","to","for","of","from","with","by","has","had","have","be","been",
+  "being","do","does","did","will","would","could","should","may","might",
+  "shall","can","am","are","there","here","where","when","what","which",
+  "who","whom","how","why","very","just","also","some","any","all","each",
+  "as","if","while","then","than","so","up","out","down","into","through",
+  "after","before","over","under","about","around","like","one","two",
+  "three","four","five","six","seven","eight","nine","ten","i","me","my",
+  "we","our","you","your","him","her","us","them","its","was","were",
+  "time","slowly","quickly","little","slowly","started","began","went",
+  "came","said","going","coming","looking","looked","saw","seen","see",
+  "get","got","take","took","give","gave","put","let","make","made",
+  "know","knew","think","thought","back","back","well","still","even",
+  "much","more","most","only","own","same","other","another"
+]);
+
+// Scene-context expansion table — if certain keywords appear, append descriptive modifiers
+const CONTEXT_EXPANDERS: [RegExp, string][] = [
+  [/sunrise|sunset|dawn|dusk|morning|golden hour/i, "golden hour lighting"],
+  [/mountain|hill|peak|range/i, "landscape scenic"],
+  [/school|classroom|student|teacher/i, "education"],
+  [/rain|rainy|monsoon/i, "rainy weather"],
+  [/snow|winter|cold/i, "winter snow"],
+  [/beach|ocean|sea|waves/i, "beach seascape"],
+  [/forest|jungle|tree|woods/i, "nature forest"],
+  [/city|urban|street|road|building/i, "urban photography"],
+  [/child|kid|children|boy|girl/i, "childhood"],
+  [/family|mother|father|parent/i, "family"],
+  [/food|meal|eat|restaurant/i, "food photography"],
+  [/happy|joy|laugh|smile/i, "joyful"],
+  [/sad|cry|tears|grief/i, "emotional"],
+  [/festival|celebrate|party|event/i, "celebration"],
+];
+
+function buildSearchQuery(englishText: string, maxWords = 7): string {
+  const words = englishText
+    .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOPWORDS.has(w));
+
+  // Deduplicate while preserving order
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const w of words) {
+    if (!seen.has(w)) { seen.add(w); unique.push(w); }
+  }
+
+  const query = unique.slice(0, maxWords).join(" ");
+
+  // Try to append a context modifier for richer results
+  for (const [pattern, suffix] of CONTEXT_EXPANDERS) {
+    if (pattern.test(query) || pattern.test(englishText)) {
+      const extra = suffix.split(" ").filter((w) => !unique.includes(w)).join(" ");
+      if (extra) return `${query} ${extra}`.trim();
+      return query;
+    }
+  }
+
+  return query;
 }
 
+// ---------------------------------------------------------------------------
+// Semantic extraction — naive heuristic pass on translated English text
+// ---------------------------------------------------------------------------
+interface SemanticAnalysis {
+  subject: string | null;
+  action: string | null;
+  location: string | null;
+  objects: string | null;
+  emotion: string | null;
+  timeOfDay: string | null;
+}
+
+const TIME_PATTERNS: [RegExp, string][] = [
+  [/\b(sunrise|dawn|early morning|morning)\b/i, "morning"],
+  [/\b(sunset|dusk|evening|twilight)\b/i, "evening"],
+  [/\b(night|midnight|dark)\b/i, "night"],
+  [/\b(noon|midday|afternoon)\b/i, "afternoon"],
+];
+
+const EMOTION_PATTERNS: [RegExp, string][] = [
+  [/\b(happy|joy|laugh|smile|cheerful|gleeful)\b/i, "joyful"],
+  [/\b(sad|cry|tears|sorrow|grief|mourn)\b/i, "sorrowful"],
+  [/\b(peaceful|calm|quiet|serene|tranquil)\b/i, "peaceful"],
+  [/\b(excited|thrill|adventure|energetic)\b/i, "energetic"],
+  [/\b(romantic|love|affection|tender)\b/i, "romantic"],
+  [/\b(fearful|scared|afraid|horror|dark)\b/i, "tense"],
+];
+
+function extractSemantics(text: string): SemanticAnalysis {
+  const lower = text.toLowerCase();
+
+  let timeOfDay: string | null = null;
+  for (const [pat, label] of TIME_PATTERNS) {
+    if (pat.test(lower)) { timeOfDay = label; break; }
+  }
+
+  let emotion: string | null = null;
+  for (const [pat, label] of EMOTION_PATTERNS) {
+    if (pat.test(lower)) { emotion = label; break; }
+  }
+
+  // Rough location extraction — look for "in/at/near/by <place>"
+  const locationMatch = lower.match(/\b(?:in|at|near|by|inside|outside|on|behind|through)\s+(?:the\s+)?([a-z]+(?:\s+[a-z]+)?)/);
+  const location = locationMatch ? locationMatch[1].trim() : null;
+
+  return { subject: null, action: null, location, objects: null, emotion, timeOfDay };
+}
+
+// ---------------------------------------------------------------------------
+// Image scoring
+// ---------------------------------------------------------------------------
+interface RawImage {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  mediumUrl?: string | null;
+  photographer: string;
+  photographerUrl: string;
+  source: string;
+  width: number;
+  height: number;
+  alt: string | null;
+  _rank: number; // 0-based position in provider results
+}
+
+function scoreImage(img: RawImage, orientation: string): number {
+  // Position score: rank 0 = 100, each rank costs 5 points (min 5)
+  const positionScore = Math.max(5, 100 - img._rank * 7);
+
+  // Size bonus: reward larger images (up to +15)
+  const megapixels = (img.width * img.height) / 1_000_000;
+  const sizeBonus = Math.min(15, megapixels * 4);
+
+  // Orientation match bonus (+10)
+  const ar = img.width / (img.height || 1);
+  let orientBonus = 0;
+  if (orientation === "landscape" && ar > 1.2) orientBonus = 10;
+  else if (orientation === "portrait" && ar < 0.85) orientBonus = 10;
+  else if (orientation === "square" && ar >= 0.85 && ar <= 1.2) orientBonus = 10;
+
+  return Math.min(100, Math.round(positionScore + sizeBonus + orientBonus));
+}
+
+// ---------------------------------------------------------------------------
+// Google Custom Search (image search)
+// ---------------------------------------------------------------------------
+interface GoogleCSEItem {
+  title: string;
+  link: string;
+  mime?: string;
+  image: {
+    contextLink: string;
+    height: number;
+    width: number;
+    byteSize: number;
+    thumbnailLink: string;
+    thumbnailHeight: number;
+    thumbnailWidth: number;
+  };
+}
+
+interface GoogleCSEResponse {
+  items?: GoogleCSEItem[];
+  searchInformation?: { totalResults: string };
+}
+
+async function searchGoogle(
+  query: string,
+  num: number,
+  orientation: string,
+  safeSearch: boolean
+): Promise<RawImage[]> {
+  if (!GOOGLE_API_KEY || !GOOGLE_CX) return [];
+
+  const imgSize =
+    orientation === "landscape" ? "xxlarge" :
+    orientation === "portrait"  ? "large"   : "large";
+
+  const params = new URLSearchParams({
+    key:        GOOGLE_API_KEY,
+    cx:         GOOGLE_CX,
+    q:          query,
+    searchType: "image",
+    num:        String(Math.min(num * 2, 10)), // fetch more than needed for better selection
+    imgType:    "photo",
+    imgSize,
+    safe:       safeSearch ? "active" : "off",
+    rights:     "cc_publicdomain|cc_attribute|cc_sharealike",
+  });
+
+  if (orientation === "landscape") params.set("imgAspectRatio", "wide");
+  if (orientation === "portrait")  params.set("imgAspectRatio", "tall");
+
+  const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = await response.text();
+      logger.warn({ status: response.status, body }, "Google CSE returned error");
+      return [];
+    }
+    const data = (await response.json()) as GoogleCSEResponse;
+    return (data.items ?? []).map((item, idx) => ({
+      id:              `google_${idx}_${encodeURIComponent(item.link).slice(0, 20)}`,
+      url:             item.link,
+      thumbnailUrl:    item.image.thumbnailLink,
+      mediumUrl:       item.link,
+      photographer:    new URL(item.image.contextLink).hostname.replace("www.", ""),
+      photographerUrl: item.image.contextLink,
+      source:          "google",
+      width:           item.image.width  || 1280,
+      height:          item.image.height || 720,
+      alt:             item.title ?? null,
+      _rank:           idx,
+    }));
+  } catch (err) {
+    logger.warn({ err }, "Google CSE search failed");
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pexels search
+// ---------------------------------------------------------------------------
 interface PexelsPhoto {
   id: number;
   width: number;
@@ -41,152 +366,132 @@ interface PexelsPhoto {
     large: string;
     medium: string;
     small: string;
-    portrait: string;
-    landscape: string;
-    tiny: string;
   };
 }
 
 interface PexelsResponse {
   total_results: number;
-  page: number;
-  per_page: number;
   photos: PexelsPhoto[];
 }
 
 async function searchPexels(
   query: string,
-  perPage: number,
+  num: number,
   orientation: string,
   safeSearch: boolean
-): Promise<{ images: ReturnType<typeof mapPexelsPhoto>[]; totalResults: number }> {
-  if (!PEXELS_API_KEY) {
-    throw new Error("Pexels API key not configured");
-  }
-
+): Promise<RawImage[]> {
+  if (!PEXELS_API_KEY) return [];
   const params = new URLSearchParams({
     query,
-    per_page: String(perPage),
+    per_page: String(Math.min(num * 2, 15)),
     orientation,
     size: "large",
   });
-
   const url = `https://api.pexels.com/v1/search?${params.toString()}`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: PEXELS_API_KEY,
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    logger.error({ status: response.status, body: text }, "Pexels API error");
-    throw new Error(`Pexels API error: ${response.status}`);
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: PEXELS_API_KEY },
+    });
+    if (!response.ok) {
+      logger.warn({ status: response.status }, "Pexels API returned error");
+      return [];
+    }
+    const data = (await response.json()) as PexelsResponse;
+    return (data.photos ?? []).map((photo, idx) => ({
+      id:              String(photo.id),
+      url:             photo.src.original,
+      thumbnailUrl:    photo.src.medium,
+      mediumUrl:       photo.src.large,
+      photographer:    photo.photographer,
+      photographerUrl: photo.photographer_url,
+      source:          "pexels",
+      width:           photo.width,
+      height:          photo.height,
+      alt:             photo.alt ?? null,
+      _rank:           idx,
+    }));
+  } catch (err) {
+    logger.warn({ err }, "Pexels search failed");
+    return [];
   }
-
-  const data = (await response.json()) as PexelsResponse;
-
-  return {
-    images: (data.photos ?? []).map(mapPexelsPhoto),
-    totalResults: data.total_results ?? 0,
-  };
 }
 
-function mapPexelsPhoto(photo: PexelsPhoto) {
-  return {
-    id: String(photo.id),
-    url: photo.src.original,
-    thumbnailUrl: photo.src.medium,
-    mediumUrl: photo.src.large,
-    photographer: photo.photographer,
-    photographerUrl: photo.photographer_url,
-    source: "pexels",
-    width: photo.width,
-    height: photo.height,
-    alt: photo.alt ?? null,
-  };
-}
+// ---------------------------------------------------------------------------
+// Multi-provider search + merge
+// ---------------------------------------------------------------------------
+type ProviderPref = "auto" | "google" | "pexels";
 
-interface UnsplashPhoto {
-  id: string;
-  width: number;
-  height: number;
-  alt_description: string | null;
-  user: {
-    name: string;
-    links: { html: string };
-  };
-  urls: {
-    full: string;
-    regular: string;
-    small: string;
-    thumb: string;
-  };
-  links: {
-    html: string;
-    download: string;
-  };
-}
-
-interface UnsplashSearchResponse {
-  total: number;
-  results: UnsplashPhoto[];
-}
-
-async function searchUnsplash(
+async function searchAllProviders(
   query: string,
   perPage: number,
   orientation: string,
-  _safeSearch: boolean
-): Promise<{ images: ReturnType<typeof mapUnsplashPhoto>[]; totalResults: number }> {
-  if (!UNSPLASH_ACCESS_KEY) {
-    throw new Error("Unsplash API key not configured");
+  safeSearch: boolean,
+  providerPref: ProviderPref
+): Promise<{ images: (RawImage & { score: number })[]; primaryProvider: string }> {
+  const fetchGoogle = providerPref !== "pexels"  && Boolean(GOOGLE_API_KEY && GOOGLE_CX);
+  const fetchPexels = providerPref !== "google"  && Boolean(PEXELS_API_KEY);
+
+  const [googleRaw, pexelsRaw] = await Promise.all([
+    fetchGoogle ? searchGoogle(query, perPage, orientation, safeSearch) : Promise.resolve([]),
+    fetchPexels ? searchPexels(query, perPage, orientation, safeSearch) : Promise.resolve([]),
+  ]);
+
+  // Score each image
+  const googleScored = googleRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
+  const pexelsScored = pexelsRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
+
+  let merged: (RawImage & { score: number })[];
+
+  if (providerPref === "auto") {
+    // Merge and rank by score
+    merged = [...googleScored, ...pexelsScored].sort((a, b) => b.score - a.score);
+  } else if (providerPref === "google") {
+    // Use Google first; fall back to Pexels if Google returned few results
+    merged = googleScored.length >= Math.ceil(perPage / 2)
+      ? googleScored
+      : [...googleScored, ...pexelsScored].sort((a, b) => b.score - a.score);
+  } else {
+    // pexels first; fall back to google
+    merged = pexelsScored.length >= Math.ceil(perPage / 2)
+      ? pexelsScored
+      : [...pexelsScored, ...googleScored].sort((a, b) => b.score - a.score);
   }
 
-  const params = new URLSearchParams({
-    query,
-    per_page: String(perPage),
-    orientation,
-    content_filter: "high",
+  // Deduplicate by URL
+  const seen = new Set<string>();
+  const deduped = merged.filter((img) => {
+    if (seen.has(img.url)) return false;
+    seen.add(img.url);
+    return true;
   });
 
-  const url = `https://api.unsplash.com/search/photos?${params.toString()}`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}`,
-      "Accept-Version": "v1",
-    },
-  });
+  const final = deduped.slice(0, perPage);
 
-  if (!response.ok) {
-    const text = await response.text();
-    logger.error({ status: response.status, body: text }, "Unsplash API error");
-    throw new Error(`Unsplash API error: ${response.status}`);
-  }
+  // Determine primary provider label
+  const sources = final.map((img) => img.source);
+  const googleCount = sources.filter((s) => s === "google").length;
+  const pexelsCount = sources.filter((s) => s === "pexels").length;
+  const primaryProvider =
+    googleCount > 0 && pexelsCount > 0 ? "multi" :
+    googleCount > 0 ? "google" :
+    pexelsCount > 0 ? "pexels" : "unknown";
 
-  const data = (await response.json()) as UnsplashSearchResponse;
-
-  return {
-    images: (data.results ?? []).map(mapUnsplashPhoto),
-    totalResults: data.total ?? 0,
-  };
+  return { images: final, primaryProvider };
 }
 
-function mapUnsplashPhoto(photo: UnsplashPhoto) {
-  return {
-    id: photo.id,
-    url: photo.urls.full,
-    thumbnailUrl: photo.urls.small,
-    mediumUrl: photo.urls.regular,
-    photographer: photo.user.name,
-    photographerUrl: photo.user.links.html,
-    source: "unsplash",
-    width: photo.width,
-    height: photo.height,
-    alt: photo.alt_description ?? null,
-  };
+// ---------------------------------------------------------------------------
+// Available providers
+// ---------------------------------------------------------------------------
+function getAvailableProviders(): string[] {
+  const providers: string[] = ["auto"];
+  if (GOOGLE_API_KEY && GOOGLE_CX) providers.push("google");
+  if (PEXELS_API_KEY) providers.push("pexels");
+  return providers;
 }
 
+// ---------------------------------------------------------------------------
+// Route: POST /images/search
+// ---------------------------------------------------------------------------
 router.post("/images/search", async (req, res): Promise<void> => {
   const parsed = SearchImagesBody.safeParse(req.body);
   if (!parsed.success) {
@@ -195,65 +500,107 @@ router.post("/images/search", async (req, res): Promise<void> => {
   }
 
   const {
-    query: rawQuery,
     lineNumber,
     lineText,
-    provider = "pexels",
+    provider = "auto",
     perPage = 4,
     orientation = "landscape",
     safeSearch = true,
   } = parsed.data;
 
-  const query = cleanQuery(rawQuery || lineText);
-  if (!query) {
-    res.status(400).json({ error: "Empty query" });
+  if (!lineText || !lineText.trim()) {
+    res.status(400).json({ error: "Empty line text" });
     return;
   }
 
-  const availableProviders = getAvailableProviders();
-  const resolvedProvider = availableProviders.includes(provider)
-    ? provider
-    : getDefaultProvider();
-
-  if (!resolvedProvider) {
-    res.status(500).json({ error: "No image providers configured. Please add PEXELS_API_KEY or UNSPLASH_ACCESS_KEY." });
+  // Check cache
+  const cacheKey = getCacheKey(lineText, perPage, orientation);
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    res.json(cached);
     return;
   }
+
+  // Step 1: Language detection
+  const lang = detectLanguage(lineText);
+
+  // Step 2: Translate to English if needed
+  let translatedText: string | null = null;
+  let englishBase: string = lineText;
+
+  if (lang.code !== "en") {
+    translatedText = await translateToEnglish(lineText);
+    if (translatedText) {
+      englishBase = translatedText;
+    }
+  }
+
+  // Step 3: Build optimised search query from English text
+  const englishQuery = buildSearchQuery(englishBase);
+
+  if (!englishQuery) {
+    res.status(400).json({ error: "Could not generate a search query from the provided text" });
+    return;
+  }
+
+  // Step 4: Semantic analysis
+  const semantics = extractSemantics(englishBase);
+
+  // Step 5: Search all providers and merge
+  const providerPref: ProviderPref =
+    provider === "google" ? "google" :
+    provider === "pexels" ? "pexels" : "auto";
 
   try {
-    let result: { images: unknown[]; totalResults: number };
+    const { images, primaryProvider } = await searchAllProviders(
+      englishQuery,
+      perPage,
+      orientation,
+      safeSearch,
+      providerPref
+    );
 
-    if (resolvedProvider === "pexels") {
-      result = await searchPexels(query, perPage, orientation, safeSearch);
-    } else if (resolvedProvider === "unsplash") {
-      result = await searchUnsplash(query, perPage, orientation, safeSearch);
-    } else {
-      res.status(400).json({ error: `Unknown provider: ${resolvedProvider}` });
-      return;
-    }
+    const analysis = {
+      detectedLanguage:     lang.code,
+      detectedLanguageName: lang.name,
+      translatedText:       translatedText,
+      englishQuery,
+      subject:   semantics.subject,
+      action:    semantics.action,
+      location:  semantics.location,
+      objects:   semantics.objects,
+      emotion:   semantics.emotion,
+      timeOfDay: semantics.timeOfDay,
+    };
 
-    const response = SearchImagesResponse.parse({
+    const responseBody = {
       lineNumber,
       lineText,
-      query,
-      images: result.images,
-      provider: resolvedProvider,
-      totalResults: result.totalResults,
-    });
+      query:        englishQuery,
+      images:       images.map(({ _rank: _r, ...rest }) => rest),
+      provider:     primaryProvider,
+      totalResults: images.length,
+      analysis,
+    };
 
+    const response = SearchImagesResponse.parse(responseBody);
+    setCache(cacheKey, response);
     res.json(response);
   } catch (err) {
-    req.log.error({ err, query, provider: resolvedProvider }, "Image search failed");
+    req.log.error({ err, lineText }, "Image search pipeline failed");
     const message = err instanceof Error ? err.message : "Image search failed";
     res.status(500).json({ error: message });
   }
 });
 
+// ---------------------------------------------------------------------------
+// Route: GET /images/settings
+// ---------------------------------------------------------------------------
 router.get("/images/settings", async (_req, res): Promise<void> => {
   const availableProviders = getAvailableProviders();
   const response = GetImageSettingsResponse.parse({
     availableProviders,
-    defaultProvider: getDefaultProvider(),
+    defaultProvider: "auto",
     maxPerPage: 8,
   });
   res.json(response);

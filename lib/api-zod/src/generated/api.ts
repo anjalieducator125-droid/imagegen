@@ -18,10 +18,10 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * Searches for images matching a script line query using configured providers
- * @summary Search images for a script line
+ * Detects the language, translates to English if needed, generates an optimized search query, searches all configured providers in parallel, scores results and returns the best images.
+ * @summary Search images for a script line with AI-powered query generation
  */
-export const searchImagesBodyProviderDefault = `pexels`;
+export const searchImagesBodyProviderDefault = `auto`;
 export const searchImagesBodyPerPageDefault = 4;
 export const searchImagesBodyPerPageMax = 8;
 
@@ -29,11 +29,10 @@ export const searchImagesBodyOrientationDefault = `landscape`;
 export const searchImagesBodySafeSearchDefault = true;
 
 export const SearchImagesBody = zod.object({
-  "query": zod.string().describe('The search query derived from the script line'),
   "lineNumber": zod.number().describe('The line number in the script'),
-  "lineText": zod.string().describe('The original script line text'),
-  "provider": zod.string().default(searchImagesBodyProviderDefault).describe('Image provider to use (pexels, unsplash)'),
-  "perPage": zod.number().min(1).max(searchImagesBodyPerPageMax).default(searchImagesBodyPerPageDefault).describe('Number of images to fetch'),
+  "lineText": zod.string().describe('The original script line text (any language)'),
+  "provider": zod.string().default(searchImagesBodyProviderDefault).describe('Provider preference: auto (best), google, pexels'),
+  "perPage": zod.number().min(1).max(searchImagesBodyPerPageMax).default(searchImagesBodyPerPageDefault).describe('Number of images to return'),
   "orientation": zod.enum(['landscape', 'portrait', 'square']).default(searchImagesBodyOrientationDefault).describe('Image orientation preference'),
   "safeSearch": zod.boolean().default(searchImagesBodySafeSearchDefault).describe('Whether to enable safe search')
 })
@@ -41,7 +40,7 @@ export const SearchImagesBody = zod.object({
 export const SearchImagesResponse = zod.object({
   "lineNumber": zod.number(),
   "lineText": zod.string(),
-  "query": zod.string().describe('The actual query used for the search'),
+  "query": zod.string().describe('The English search query actually used'),
   "images": zod.array(zod.object({
   "id": zod.string(),
   "url": zod.string().describe('Full resolution image URL'),
@@ -49,13 +48,26 @@ export const SearchImagesResponse = zod.object({
   "mediumUrl": zod.string().optional().describe('Medium resolution URL'),
   "photographer": zod.string(),
   "photographerUrl": zod.string(),
-  "source": zod.string().describe('Provider name (pexels, unsplash)'),
+  "source": zod.string().describe('Provider name (pexels, google)'),
   "width": zod.number(),
   "height": zod.number(),
-  "alt": zod.string().nullish().describe('Alt text for the image')
+  "alt": zod.string().nullish().describe('Alt text for the image'),
+  "score": zod.number().describe('Relevance score 0-100')
 })),
-  "provider": zod.string(),
-  "totalResults": zod.number().optional()
+  "provider": zod.string().describe('Primary provider used (or \"multi\" if merged)'),
+  "totalResults": zod.number().optional(),
+  "analysis": zod.object({
+  "detectedLanguage": zod.string().describe('Detected language code (e.g. \"hi\", \"en\")'),
+  "detectedLanguageName": zod.string().optional().describe('Human-readable language name'),
+  "translatedText": zod.string().nullish().describe('English translation of the original text (null if already English)'),
+  "englishQuery": zod.string().describe('Optimized English search query generated from the line'),
+  "subject": zod.string().nullish().describe('Main subject of the scene'),
+  "action": zod.string().nullish().describe('Main action or activity'),
+  "location": zod.string().nullish().describe('Location or setting'),
+  "objects": zod.string().nullish().describe('Key objects in the scene'),
+  "emotion": zod.string().nullish().describe('Mood or emotion of the scene'),
+  "timeOfDay": zod.string().nullish().describe('Time of day if detectable')
+}).optional()
 })
 
 
@@ -63,7 +75,7 @@ export const SearchImagesResponse = zod.object({
  * @summary Get available image providers and settings
  */
 export const GetImageSettingsResponse = zod.object({
-  "availableProviders": zod.array(zod.string()),
+  "availableProviders": zod.array(zod.string()).describe('List of configured providers (auto, google, pexels)'),
   "defaultProvider": zod.string(),
   "maxPerPage": zod.number().optional()
 })

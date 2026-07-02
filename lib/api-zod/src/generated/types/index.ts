@@ -13,3 +13,4 @@ export * from './imageSearchInput';
 export * from './imageSearchInputOrientation';
 export * from './imageSearchResult';
 export * from './imageSettings';
+export * from './scriptLineAnalysis';

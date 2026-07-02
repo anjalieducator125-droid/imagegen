@@ -1,0 +1,107 @@
+The required API keys have already been added to Replit Secrets.
+
+Available secrets:
+- GOOGLE_API_KEY
+- GOOGLE_CX
+- PEXELS_API_KEY
+
+Do not ask me for API keys again.
+
+Redesign the image search engine to produce highly accurate results for Hindi and English scripts.
+
+Requirements:
+
+1. The user pastes an entire script.
+
+2. Split the script into individual non-empty lines.
+
+3. For each line:
+
+   - Detect the language automatically.
+   - If the line is in Hindi, translate it into natural English.
+   - Extract:
+     • Subject
+     • Action
+     • Location
+     • Objects
+     • Time of day
+     • Mood
+
+4. Generate an optimized image search query.
+
+Example:
+
+Hindi:
+"सुबह का समय था और सूरज धीरे-धीरे पहाड़ों के पीछे से निकल रहा था।"
+
+Search Query:
+beautiful sunrise behind mountains golden morning landscape
+
+------------------------------------------------
+
+Hindi:
+"एक छोटा लड़का अपने लाल रंग के बैग के साथ स्कूल जाने के लिए घर से निकला।"
+
+Search Query:
+young school boy with red backpack walking to school
+
+------------------------------------------------
+
+5. Search multiple providers.
+
+Priority:
+
+1. Google Custom Search API
+2. Pexels API
+
+Fetch multiple images from every provider.
+
+6. Score every image using:
+
+- Relevance
+- Objects detected
+- Scene similarity
+- Subject similarity
+- Landscape/portrait match
+- Overall quality
+
+7. Automatically choose the highest-scoring image.
+
+Never always prefer one provider.
+
+Choose whichever provider has the best image.
+
+8. Display:
+
+- Script line
+- Generated English search query
+- Selected provider
+- Confidence score
+- Best image
+- Alternative images
+
+9. Every image must have:
+
+- Download
+- Open Original
+- Copy Image URL
+
+10. Add:
+
+Download All Images
+
+Download ZIP
+
+11. If Google returns poor results, automatically fall back to Pexels.
+
+12. Cache repeated searches.
+
+13. Process the entire script automatically.
+
+14. Never stop if one line fails.
+
+15. Continue until every script line has an image.
+
+16. Build a production-ready application with clean architecture, responsive UI, and excellent performance.
+
+The application should intelligently choose the best image for each script line instead of simply displaying the first available result.
