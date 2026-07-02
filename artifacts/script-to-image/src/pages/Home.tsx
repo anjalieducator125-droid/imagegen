@@ -6,8 +6,9 @@ import { useScriptProcessor } from "@/hooks/useScriptProcessor";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { exportToJSON, exportToCSV, exportToZIP } from "@/lib/export";
-import { Download, FileJson, FileSpreadsheet, Play, Square, Loader2, Clapperboard } from "lucide-react";
+import { Download, FileJson, FileSpreadsheet, Play, Square, Loader2, Clapperboard, FlaskConical } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "wouter";
 
 export function Home() {
   const processor = useScriptProcessor();
@@ -35,7 +36,15 @@ export function Home() {
               <p className="text-[11px] text-muted-foreground leading-none mt-0.5">Storyboard generator</p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <Link href="/google-test">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                <FlaskConical className="w-3.5 h-3.5" />
+                Google API Test
+              </Button>
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
