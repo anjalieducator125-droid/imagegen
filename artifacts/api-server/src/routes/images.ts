@@ -20,11 +20,11 @@ function getDefaultProvider(): string {
 }
 
 function cleanQuery(text: string): string {
+  // Use Unicode-aware regex so non-Latin scripts (Hindi, Arabic, etc.) are preserved
   return text
-    .replace(/[^\w\s]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+    .trim();
 }
 
 interface PexelsPhoto {
