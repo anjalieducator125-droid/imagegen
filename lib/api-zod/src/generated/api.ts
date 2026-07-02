@@ -67,7 +67,17 @@ export const SearchImagesResponse = zod.object({
   "objects": zod.string().nullish().describe('Key objects in the scene'),
   "emotion": zod.string().nullish().describe('Mood or emotion of the scene'),
   "timeOfDay": zod.string().nullish().describe('Time of day if detectable')
-}).optional()
+}).optional(),
+  "providerDebug": zod.array(zod.object({
+  "provider": zod.string().describe('Provider name (google, pexels)'),
+  "query": zod.string().describe('Exact query string sent to the provider'),
+  "requestUrl": zod.string().describe('Full request URL with API key redacted'),
+  "rawCount": zod.number().describe('Number of images returned by the provider before filtering'),
+  "filteredCount": zod.number().describe('Number of images remaining after deduplication and filtering'),
+  "executionMs": zod.number().describe('Time taken for this provider call in milliseconds'),
+  "error": zod.string().nullish().describe('Error message if the provider call failed'),
+  "sampleUrls": zod.array(zod.string()).optional().describe('First 10 image URLs returned by the provider')
+})).optional().describe('Per-provider debug information for each search call')
 })
 
 

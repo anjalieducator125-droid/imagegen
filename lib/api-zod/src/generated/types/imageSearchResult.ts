@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ImageResult } from './imageResult';
+import type { ProviderDebugInfo } from './providerDebugInfo';
 import type { ScriptLineAnalysis } from './scriptLineAnalysis';
 
 export interface ImageSearchResult {
@@ -18,4 +19,6 @@ export interface ImageSearchResult {
   provider: string;
   totalResults?: number;
   analysis?: ScriptLineAnalysis;
+  /** Per-provider debug information for each search call */
+  providerDebug?: ProviderDebugInfo[];
 }

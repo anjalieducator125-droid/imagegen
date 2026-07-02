@@ -193,6 +193,37 @@ components:
           type: number
           description: Relevance score 0-100
 
+    ProviderDebugInfo:
+      type: object
+      required: [provider, query, requestUrl, rawCount, filteredCount, executionMs]
+      properties:
+        provider:
+          type: string
+          description: Provider name (google, pexels)
+        query:
+          type: string
+          description: Exact query string sent to the provider
+        requestUrl:
+          type: string
+          description: Full request URL with API key redacted
+        rawCount:
+          type: integer
+          description: Number of images returned by the provider before filtering
+        filteredCount:
+          type: integer
+          description: Number of images remaining after deduplication and filtering
+        executionMs:
+          type: number
+          description: Time taken for this provider call in milliseconds
+        error:
+          type: ["string", "null"]
+          description: Error message if the provider call failed
+        sampleUrls:
+          type: array
+          items:
+            type: string
+          description: First 10 image URLs returned by the provider
+
     ImageSearchResult:
       type: object
       required: [lineNumber, lineText, query, images, provider]
@@ -215,6 +246,11 @@ components:
           type: integer
         analysis:
           $ref: "#/components/schemas/ScriptLineAnalysis"
+        providerDebug:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProviderDebugInfo"
+          description: Per-provider debug information for each search call
 
     ImageSettings:
       type: object

@@ -111,6 +111,28 @@ export interface ImageResult {
   score: number;
 }
 
+export interface ProviderDebugInfo {
+  /** Provider name (google, pexels) */
+  provider: string;
+  /** Exact query string sent to the provider */
+  query: string;
+  /** Full request URL with API key redacted */
+  requestUrl: string;
+  /** Number of images returned by the provider before filtering */
+  rawCount: number;
+  /** Number of images remaining after deduplication and filtering */
+  filteredCount: number;
+  /** Time taken for this provider call in milliseconds */
+  executionMs: number;
+  /**
+     * Error message if the provider call failed
+     * @nullable
+     */
+  error?: string | null;
+  /** First 10 image URLs returned by the provider */
+  sampleUrls?: string[];
+}
+
 export interface ImageSearchResult {
   lineNumber: number;
   lineText: string;
@@ -121,6 +143,8 @@ export interface ImageSearchResult {
   provider: string;
   totalResults?: number;
   analysis?: ScriptLineAnalysis;
+  /** Per-provider debug information for each search call */
+  providerDebug?: ProviderDebugInfo[];
 }
 
 export interface ImageSettings {
