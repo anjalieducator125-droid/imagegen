@@ -1,0 +1,225 @@
+Build a modern AI-powered web application called "Script to Image Finder".
+
+Objective:
+The website should allow users to paste an entire script, automatically split it into individual lines, and generate highly relevant images for each line. Users should then be able to preview and download every image individually or download all images together.
+
+Tech Stack:
+- Frontend: React + TypeScript + Tailwind CSS
+- Backend: Node.js + Express
+- Image API: Google Custom Search API OR Bing Image Search API OR Unsplash API (Make the API provider easily configurable)
+- Optional AI: OpenAI API for improving search queries before fetching images.
+
+UI Requirements:
+Create a clean, premium, responsive interface similar to ChatGPT or Notion.
+
+Sections:
+1. Header
+   - Logo
+   - Website Name
+   - Dark/Light Mode Toggle
+
+2. Script Input
+   - Large textarea
+   - Placeholder:
+     "Paste your script here..."
+   - Character Counter
+   - Clear Button
+
+3. Controls
+   - Generate Images Button
+   - Stop Button
+   - Progress Indicator
+   - Total Lines Counter
+
+Workflow:
+When the user clicks "Generate Images":
+
+1. Read the entire script.
+2. Split the script into separate lines.
+3. Ignore empty lines.
+4. Number every line.
+5. For every single line:
+   - Convert it into a natural image search query.
+   - Remove punctuation.
+   - Improve the search query using AI if enabled.
+   - Search for relevant high-quality images.
+   - Fetch at least 4 images per line.
+6. Display the results one line at a time.
+
+Result Card Layout:
+
+For every script line show:
+
+--------------------------------------
+Line 1
+Script:
+"The little boy is walking in the forest."
+
+Search Query:
+little boy walking in forest
+
+Images:
+[Image 1]
+[Image 2]
+[Image 3]
+[Image 4]
+
+Buttons:
+Download Image 1
+Download Image 2
+Download Image 3
+Download Image 4
+Download All Images for This Line
+
+--------------------------------------
+
+Features:
+
+✔ Lazy loading images
+
+✔ Loading animation
+
+✔ Skeleton placeholders
+
+✔ Progress percentage
+
+✔ Error handling
+
+✔ Retry failed searches
+
+✔ Responsive layout
+
+✔ Masonry image grid
+
+✔ Image Preview Modal
+
+✔ Open Full Resolution
+
+✔ Copy Search Query
+
+✔ Copy Script Line
+
+✔ Regenerate Images
+
+✔ Download button on every image
+
+✔ Download all images as ZIP
+
+✔ Search remaining lines automatically
+
+✔ Cache results
+
+✔ Fast performance
+
+Download Features:
+
+Each image should have:
+
+- Download Button
+- Open Original
+- Copy Image URL
+
+Global buttons:
+
+Download All Images
+
+Download ZIP
+
+Export Results
+
+Export JSON
+
+Export CSV
+
+Image Quality:
+
+Only show:
+- HD images
+- Landscape preferred
+- No watermarked images if possible
+- High relevance
+- Safe search enabled
+
+Settings Panel:
+
+User can choose:
+
+Images per line:
+- 2
+- 4
+- 6
+- 8
+
+Image Source:
+- Google
+- Bing
+- Unsplash
+- Pexels
+
+Image Orientation:
+- Landscape
+- Portrait
+- Square
+
+Safe Search:
+On/Off
+
+Performance:
+
+Process lines sequentially.
+
+Limit API requests to avoid rate limits.
+
+Show live progress.
+
+Example:
+
+Input:
+
+The sun rises over the mountains.
+
+A girl is reading a book.
+
+A dog runs in the park.
+
+Output:
+
+Card 1
+Images related to sunrise over mountains.
+
+Card 2
+Images related to girl reading book.
+
+Card 3
+Images related to dog running in park.
+
+Code Requirements:
+
+- Clean architecture
+- Modular components
+- Reusable hooks
+- Environment variables for API keys
+- Proper TypeScript typing
+- Error boundaries
+- Mobile responsive
+- Accessible UI
+- Production-ready code
+- No dummy data
+- Fully functional implementation
+
+Bonus Features:
+
+- Drag & Drop text file (.txt) upload
+- PDF script upload
+- DOCX upload
+- Infinite scrolling
+- Image favorites
+- Search history
+- Recent projects
+- Automatic keyword extraction
+- AI-generated better search prompts
+- Multi-language support
+- Dark mode
+- Keyboard shortcuts
+- Batch processing
+- Download complete project as ZIP
