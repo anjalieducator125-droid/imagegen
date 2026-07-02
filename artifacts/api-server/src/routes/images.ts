@@ -34,7 +34,6 @@ function getFromCache(key: string): unknown | null {
 
 function setCache(key: string, result: unknown): void {
   resultCache.set(key, { result, timestamp: Date.now() });
-  // Evict old entries if cache grows large
   if (resultCache.size > 500) {
     const now = Date.now();
     for (const [k, v] of resultCache) {
@@ -74,7 +73,6 @@ interface GoogleTranslateResponse {
 }
 
 async function translateToEnglish(text: string): Promise<string | null> {
-  // 1) Try the official Google Cloud Translation API if key is available
   if (GOOGLE_API_KEY) {
     try {
       const url = `https://translation.googleapis.com/language/translate/v2?key=${GOOGLE_API_KEY}`;
@@ -95,7 +93,6 @@ async function translateToEnglish(text: string): Promise<string | null> {
     }
   }
 
-  // 2) Fallback: unofficial free Google Translate endpoint (no key required)
   try {
     const encoded = encodeURIComponent(text);
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encoded}`;
@@ -106,7 +103,6 @@ async function translateToEnglish(text: string): Promise<string | null> {
       logger.warn({ status: response.status }, "Free translate endpoint failed");
       return null;
     }
-    // Response format: [[["translated","original",...], ...], ...]
     const data = (await response.json()) as Array<Array<Array<string>>>;
     const sentences = data?.[0];
     if (!Array.isArray(sentences)) return null;
@@ -122,7 +118,7 @@ async function translateToEnglish(text: string): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Keyword extraction — removes stopwords, produces a concise image search query
+// Keyword extraction
 // ---------------------------------------------------------------------------
 const STOPWORDS = new Set([
   "a","an","the","is","was","were","it","he","she","they","his","her",
@@ -142,7 +138,6 @@ const STOPWORDS = new Set([
   "much","more","most","only","own","same","other","another"
 ]);
 
-// Scene-context expansion table — if certain keywords appear, append descriptive modifiers
 const CONTEXT_EXPANDERS: [RegExp, string][] = [
   [/sunrise|sunset|dawn|dusk|morning|golden hour/i, "golden hour lighting"],
   [/mountain|hill|peak|range/i, "landscape scenic"],
@@ -167,7 +162,6 @@ function buildSearchQuery(englishText: string, maxWords = 7): string {
     .split(/\s+/)
     .filter((w) => w.length > 2 && !STOPWORDS.has(w));
 
-  // Deduplicate while preserving order
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const w of words) {
@@ -176,7 +170,6 @@ function buildSearchQuery(englishText: string, maxWords = 7): string {
 
   const query = unique.slice(0, maxWords).join(" ");
 
-  // Try to append a context modifier for richer results
   for (const [pattern, suffix] of CONTEXT_EXPANDERS) {
     if (pattern.test(query) || pattern.test(englishText)) {
       const extra = suffix.split(" ").filter((w) => !unique.includes(w)).join(" ");
@@ -189,7 +182,7 @@ function buildSearchQuery(englishText: string, maxWords = 7): string {
 }
 
 // ---------------------------------------------------------------------------
-// Semantic extraction — naive heuristic pass on translated English text
+// Semantic extraction
 // ---------------------------------------------------------------------------
 interface SemanticAnalysis {
   subject: string | null;
@@ -229,7 +222,6 @@ function extractSemantics(text: string): SemanticAnalysis {
     if (pat.test(lower)) { emotion = label; break; }
   }
 
-  // Rough location extraction — look for "in/at/near/by <place>"
   const locationMatch = lower.match(/\b(?:in|at|near|by|inside|outside|on|behind|through)\s+(?:the\s+)?([a-z]+(?:\s+[a-z]+)?)/);
   const location = locationMatch ? locationMatch[1].trim() : null;
 
@@ -250,25 +242,33 @@ interface RawImage {
   width: number;
   height: number;
   alt: string | null;
-  _rank: number; // 0-based position in provider results
+  _rank: number;
 }
 
 function scoreImage(img: RawImage, orientation: string): number {
-  // Position score: rank 0 = 100, each rank costs 5 points (min 5)
   const positionScore = Math.max(5, 100 - img._rank * 7);
-
-  // Size bonus: reward larger images (up to +15)
   const megapixels = (img.width * img.height) / 1_000_000;
   const sizeBonus = Math.min(15, megapixels * 4);
-
-  // Orientation match bonus (+10)
   const ar = img.width / (img.height || 1);
   let orientBonus = 0;
   if (orientation === "landscape" && ar > 1.2) orientBonus = 10;
   else if (orientation === "portrait" && ar < 0.85) orientBonus = 10;
   else if (orientation === "square" && ar >= 0.85 && ar <= 1.2) orientBonus = 10;
-
   return Math.min(100, Math.round(positionScore + sizeBonus + orientBonus));
+}
+
+// ---------------------------------------------------------------------------
+// Debug info type
+// ---------------------------------------------------------------------------
+interface ProviderDebugInfo {
+  provider: string;
+  query: string;
+  requestUrl: string;
+  rawCount: number;
+  filteredCount: number;
+  executionMs: number;
+  error: string | null;
+  sampleUrls: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +292,11 @@ interface GoogleCSEItem {
 interface GoogleCSEResponse {
   items?: GoogleCSEItem[];
   searchInformation?: { totalResults: string };
+  error?: { message: string; status: string; code: number };
+}
+
+function redactKey(url: string): string {
+  return url.replace(/([?&]key=)[^&]*/g, "$1[REDACTED]");
 }
 
 async function searchGoogle(
@@ -299,8 +304,24 @@ async function searchGoogle(
   num: number,
   orientation: string,
   safeSearch: boolean
-): Promise<RawImage[]> {
-  if (!GOOGLE_API_KEY || !GOOGLE_CX) return [];
+): Promise<{ images: RawImage[]; debug: ProviderDebugInfo }> {
+  const startMs = Date.now();
+
+  if (!GOOGLE_API_KEY || !GOOGLE_CX) {
+    return {
+      images: [],
+      debug: {
+        provider: "google",
+        query,
+        requestUrl: "(not configured — GOOGLE_API_KEY or GOOGLE_CX missing)",
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs: 0,
+        error: "Google Custom Search is not configured: GOOGLE_API_KEY and/or GOOGLE_CX environment variable is missing.",
+        sampleUrls: [],
+      },
+    };
+  }
 
   const imgSize =
     orientation === "landscape" ? "xxlarge" :
@@ -311,7 +332,7 @@ async function searchGoogle(
     cx:         GOOGLE_CX,
     q:          query,
     searchType: "image",
-    num:        String(Math.min(num * 2, 10)), // fetch more than needed for better selection
+    num:        String(Math.min(num * 2, 10)),
     imgType:    "photo",
     imgSize,
     safe:       safeSearch ? "active" : "off",
@@ -321,21 +342,48 @@ async function searchGoogle(
   if (orientation === "landscape") params.set("imgAspectRatio", "wide");
   if (orientation === "portrait")  params.set("imgAspectRatio", "tall");
 
-  const url = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+  const rawUrl = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+  const redactedUrl = redactKey(rawUrl);
+
   try {
-    const response = await fetch(url);
+    const response = await fetch(rawUrl);
+    const executionMs = Date.now() - startMs;
+
     if (!response.ok) {
-      const body = await response.text();
-      logger.warn({ status: response.status, body }, "Google CSE returned error");
-      return [];
+      let errorMsg: string;
+      try {
+        const body = (await response.json()) as GoogleCSEResponse;
+        errorMsg = body.error?.message
+          ? `HTTP ${response.status} — ${body.error.message}`
+          : `HTTP ${response.status} ${response.statusText}`;
+      } catch {
+        errorMsg = `HTTP ${response.status} ${response.statusText}`;
+      }
+
+      logger.warn({ status: response.status, errorMsg }, "Google CSE returned error");
+      return {
+        images: [],
+        debug: {
+          provider: "google",
+          query,
+          requestUrl: redactedUrl,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: errorMsg,
+          sampleUrls: [],
+        },
+      };
     }
+
     const data = (await response.json()) as GoogleCSEResponse;
-    return (data.items ?? []).map((item, idx) => ({
+    const items = data.items ?? [];
+    const images: RawImage[] = items.map((item, idx) => ({
       id:              `google_${idx}_${encodeURIComponent(item.link).slice(0, 20)}`,
       url:             item.link,
       thumbnailUrl:    item.image.thumbnailLink,
       mediumUrl:       item.link,
-      photographer:    new URL(item.image.contextLink).hostname.replace("www.", ""),
+      photographer:    (() => { try { return new URL(item.image.contextLink).hostname.replace("www.", ""); } catch { return item.image.contextLink; } })(),
       photographerUrl: item.image.contextLink,
       source:          "google",
       width:           item.image.width  || 1280,
@@ -343,9 +391,37 @@ async function searchGoogle(
       alt:             item.title ?? null,
       _rank:           idx,
     }));
+
+    return {
+      images,
+      debug: {
+        provider: "google",
+        query,
+        requestUrl: redactedUrl,
+        rawCount: images.length,
+        filteredCount: images.length,
+        executionMs,
+        error: null,
+        sampleUrls: images.slice(0, 10).map((img) => img.url),
+      },
+    };
   } catch (err) {
+    const executionMs = Date.now() - startMs;
+    const errorMsg = err instanceof Error ? err.message : String(err);
     logger.warn({ err }, "Google CSE search failed");
-    return [];
+    return {
+      images: [],
+      debug: {
+        provider: "google",
+        query,
+        requestUrl: redactedUrl,
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs,
+        error: `Network/fetch error: ${errorMsg}`,
+        sampleUrls: [],
+      },
+    };
   }
 }
 
@@ -379,8 +455,25 @@ async function searchPexels(
   num: number,
   orientation: string,
   safeSearch: boolean
-): Promise<RawImage[]> {
-  if (!PEXELS_API_KEY) return [];
+): Promise<{ images: RawImage[]; debug: ProviderDebugInfo }> {
+  const startMs = Date.now();
+
+  if (!PEXELS_API_KEY) {
+    return {
+      images: [],
+      debug: {
+        provider: "pexels",
+        query,
+        requestUrl: "(not configured — PEXELS_API_KEY missing)",
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs: 0,
+        error: "Pexels is not configured: PEXELS_API_KEY environment variable is missing.",
+        sampleUrls: [],
+      },
+    };
+  }
+
   const params = new URLSearchParams({
     query,
     per_page: String(Math.min(num * 2, 15)),
@@ -388,16 +481,33 @@ async function searchPexels(
     size: "large",
   });
   const url = `https://api.pexels.com/v1/search?${params.toString()}`;
+
   try {
     const response = await fetch(url, {
       headers: { Authorization: PEXELS_API_KEY },
     });
+    const executionMs = Date.now() - startMs;
+
     if (!response.ok) {
+      const errorMsg = `HTTP ${response.status} ${response.statusText}`;
       logger.warn({ status: response.status }, "Pexels API returned error");
-      return [];
+      return {
+        images: [],
+        debug: {
+          provider: "pexels",
+          query,
+          requestUrl: url,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: errorMsg,
+          sampleUrls: [],
+        },
+      };
     }
+
     const data = (await response.json()) as PexelsResponse;
-    return (data.photos ?? []).map((photo, idx) => ({
+    const images: RawImage[] = (data.photos ?? []).map((photo, idx) => ({
       id:              String(photo.id),
       url:             photo.src.original,
       thumbnailUrl:    photo.src.medium,
@@ -410,9 +520,37 @@ async function searchPexels(
       alt:             photo.alt ?? null,
       _rank:           idx,
     }));
+
+    return {
+      images,
+      debug: {
+        provider: "pexels",
+        query,
+        requestUrl: url,
+        rawCount: images.length,
+        filteredCount: images.length,
+        executionMs,
+        error: null,
+        sampleUrls: images.slice(0, 10).map((img) => img.url),
+      },
+    };
   } catch (err) {
+    const executionMs = Date.now() - startMs;
+    const errorMsg = err instanceof Error ? err.message : String(err);
     logger.warn({ err }, "Pexels search failed");
-    return [];
+    return {
+      images: [],
+      debug: {
+        provider: "pexels",
+        query,
+        requestUrl: url,
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs,
+        error: `Network/fetch error: ${errorMsg}`,
+        sampleUrls: [],
+      },
+    };
   }
 }
 
@@ -427,37 +565,49 @@ async function searchAllProviders(
   orientation: string,
   safeSearch: boolean,
   providerPref: ProviderPref
-): Promise<{ images: (RawImage & { score: number })[]; primaryProvider: string }> {
+): Promise<{
+  images: (RawImage & { score: number })[];
+  primaryProvider: string;
+  providerDebug: ProviderDebugInfo[];
+}> {
   const fetchGoogle = providerPref !== "pexels"  && Boolean(GOOGLE_API_KEY && GOOGLE_CX);
   const fetchPexels = providerPref !== "google"  && Boolean(PEXELS_API_KEY);
 
-  const [googleRaw, pexelsRaw] = await Promise.all([
-    fetchGoogle ? searchGoogle(query, perPage, orientation, safeSearch) : Promise.resolve([]),
-    fetchPexels ? searchPexels(query, perPage, orientation, safeSearch) : Promise.resolve([]),
+  // Always attempt Google if requested — do NOT silently skip
+  const shouldAttemptGoogle = providerPref === "google" || providerPref === "auto";
+  const shouldAttemptPexels = providerPref === "pexels" || providerPref === "auto";
+
+  const [googleResult, pexelsResult] = await Promise.all([
+    shouldAttemptGoogle
+      ? searchGoogle(query, perPage, orientation, safeSearch)
+      : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
+    shouldAttemptPexels
+      ? searchPexels(query, perPage, orientation, safeSearch)
+      : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
   ]);
 
-  // Score each image
+  const googleRaw = googleResult?.images ?? [];
+  const pexelsRaw = pexelsResult?.images ?? [];
+  const debugList: ProviderDebugInfo[] = [];
+
+  if (googleResult) debugList.push(googleResult.debug);
+  if (pexelsResult) debugList.push(pexelsResult.debug);
+
   const googleScored = googleRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
   const pexelsScored = pexelsRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
 
   let merged: (RawImage & { score: number })[];
 
   if (providerPref === "auto") {
-    // Merge and rank by score
     merged = [...googleScored, ...pexelsScored].sort((a, b) => b.score - a.score);
   } else if (providerPref === "google") {
-    // Use Google first; fall back to Pexels if Google returned few results
-    merged = googleScored.length >= Math.ceil(perPage / 2)
-      ? googleScored
-      : [...googleScored, ...pexelsScored].sort((a, b) => b.score - a.score);
+    // No silent fallback — use only Google results (even if empty due to error)
+    merged = googleScored;
   } else {
-    // pexels first; fall back to google
-    merged = pexelsScored.length >= Math.ceil(perPage / 2)
-      ? pexelsScored
-      : [...pexelsScored, ...googleScored].sort((a, b) => b.score - a.score);
+    // No silent fallback — use only Pexels results
+    merged = pexelsScored;
   }
 
-  // Deduplicate by URL
   const seen = new Set<string>();
   const deduped = merged.filter((img) => {
     if (seen.has(img.url)) return false;
@@ -467,7 +617,12 @@ async function searchAllProviders(
 
   const final = deduped.slice(0, perPage);
 
-  // Determine primary provider label
+  // Update filteredCount in debug to reflect post-dedup/slice counts
+  for (const dbg of debugList) {
+    const fromThisProvider = final.filter((img) => img.source === dbg.provider);
+    dbg.filteredCount = fromThisProvider.length;
+  }
+
   const sources = final.map((img) => img.source);
   const googleCount = sources.filter((s) => s === "google").length;
   const pexelsCount = sources.filter((s) => s === "pexels").length;
@@ -476,7 +631,7 @@ async function searchAllProviders(
     googleCount > 0 ? "google" :
     pexelsCount > 0 ? "pexels" : "unknown";
 
-  return { images: final, primaryProvider };
+  return { images: final, primaryProvider, providerDebug: debugList };
 }
 
 // ---------------------------------------------------------------------------
@@ -513,7 +668,6 @@ router.post("/images/search", async (req, res): Promise<void> => {
     return;
   }
 
-  // Check cache
   const cacheKey = getCacheKey(lineText, perPage, orientation);
   const cached = getFromCache(cacheKey);
   if (cached) {
@@ -521,10 +675,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
     return;
   }
 
-  // Step 1: Language detection
   const lang = detectLanguage(lineText);
 
-  // Step 2: Translate to English if needed
   let translatedText: string | null = null;
   let englishBase: string = lineText;
 
@@ -535,7 +687,6 @@ router.post("/images/search", async (req, res): Promise<void> => {
     }
   }
 
-  // Step 3: Build optimised search query from English text
   const englishQuery = buildSearchQuery(englishBase);
 
   if (!englishQuery) {
@@ -543,16 +694,14 @@ router.post("/images/search", async (req, res): Promise<void> => {
     return;
   }
 
-  // Step 4: Semantic analysis
   const semantics = extractSemantics(englishBase);
 
-  // Step 5: Search all providers and merge
   const providerPref: ProviderPref =
     provider === "google" ? "google" :
     provider === "pexels" ? "pexels" : "auto";
 
   try {
-    const { images, primaryProvider } = await searchAllProviders(
+    const { images, primaryProvider, providerDebug } = await searchAllProviders(
       englishQuery,
       perPage,
       orientation,
@@ -581,6 +730,7 @@ router.post("/images/search", async (req, res): Promise<void> => {
       provider:     primaryProvider,
       totalResults: images.length,
       analysis,
+      providerDebug,
     };
 
     const response = SearchImagesResponse.parse(responseBody);
