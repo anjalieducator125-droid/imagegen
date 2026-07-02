@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Script to Image Finder API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: images
+    description: Image search operations
+  - name: settings
+    description: App settings
 paths:
   /healthz:
     get:
@@ -24,6 +28,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /images/search:
+    post:
+      operationId: searchImages
+      tags: [images]
+      summary: Search images for a script line
+      description: Searches for images matching a script line query using configured providers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImageSearchInput"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageSearchResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /images/settings:
+    get:
+      operationId: getImageSettings
+      tags: [settings]
+      summary: Get available image providers and settings
+      responses:
+        "200":
+          description: Available settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageSettings"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +84,106 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    ImageSearchInput:
+      type: object
+      required: [query, lineNumber, lineText]
+      properties:
+        query:
+          type: string
+          description: The search query derived from the script line
+        lineNumber:
+          type: integer
+          description: The line number in the script
+        lineText:
+          type: string
+          description: The original script line text
+        provider:
+          type: string
+          description: Image provider to use (pexels, unsplash)
+          default: pexels
+        perPage:
+          type: integer
+          description: Number of images to fetch
+          default: 4
+          minimum: 1
+          maximum: 8
+        orientation:
+          type: string
+          description: Image orientation preference
+          enum: [landscape, portrait, square]
+          default: landscape
+        safeSearch:
+          type: boolean
+          description: Whether to enable safe search
+          default: true
+
+    ImageResult:
+      type: object
+      required: [id, url, thumbnailUrl, photographer, photographerUrl, source, width, height]
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          description: Full resolution image URL
+        thumbnailUrl:
+          type: string
+          description: Thumbnail URL for display
+        mediumUrl:
+          type: string
+          description: Medium resolution URL
+        photographer:
+          type: string
+        photographerUrl:
+          type: string
+        source:
+          type: string
+          description: Provider name (pexels, unsplash)
+        width:
+          type: integer
+        height:
+          type: integer
+        alt:
+          type: ["string", "null"]
+          description: Alt text for the image
+
+    ImageSearchResult:
+      type: object
+      required: [lineNumber, lineText, query, images, provider]
+      properties:
+        lineNumber:
+          type: integer
+        lineText:
+          type: string
+        query:
+          type: string
+          description: The actual query used for the search
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageResult"
+        provider:
+          type: string
+        totalResults:
+          type: integer
+
+    ImageSettings:
+      type: object
+      required: [availableProviders, defaultProvider]
+      properties:
+        availableProviders:
+          type: array
+          items:
+            type: string
+        defaultProvider:
+          type: string
+        maxPerPage:
+          type: integer
