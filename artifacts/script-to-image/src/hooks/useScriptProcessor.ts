@@ -3,6 +3,31 @@ import { useSearchImages } from '@workspace/api-client-react';
 import type { ImageSearchResult, ImageSearchInputOrientation } from '@workspace/api-client-react';
 import { useToast } from '@/hooks/use-toast';
 
+// ---------------------------------------------------------------------------
+// Sentence / scene splitter
+// Splits on: । (Devanagari danda) . ? ! and blank lines.
+// Keeps the punctuation attached to the preceding sentence.
+// ---------------------------------------------------------------------------
+function splitIntoScenes(text: string): { lineNumber: number; text: string }[] {
+  if (!text.trim()) return [];
+
+  // Treat double line-breaks as scene breaks; single newlines become spaces
+  const normalized = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{2,}/g, '।')   // blank line → danda so it triggers a split
+    .replace(/\n/g, ' ');       // single newline → space (continuation)
+
+  // Match: one or more non-sentence-ender chars, optionally followed by one or
+  // more sentence-ender chars (so the punctuation stays with its sentence).
+  const sentenceRe = /[^।.?!]+[।.?!]*/g;
+  const matches = normalized.match(sentenceRe) ?? [];
+
+  return matches
+    .map(s => s.trim())
+    .filter(s => s.replace(/[।.?!\s]/g, '').length > 2)   // skip near-empty
+    .map((text, idx) => ({ lineNumber: idx + 1, text }));
+}
+
 export type Settings = {
   perPage: number;
   provider: string;
@@ -31,12 +56,7 @@ export function useScriptProcessor() {
 
   const handleScriptChange = (val: string) => {
     setScript(val);
-    const lines = val
-      .split('\n')
-      .map(t => t.trim())
-      .filter(t => t.length > 0)
-      .map((text, idx) => ({ lineNumber: idx + 1, text }));
-    setParsedLines(lines);
+    setParsedLines(splitIntoScenes(val));
   };
 
   const processLine = async (line: { lineNumber: number; text: string }) => {

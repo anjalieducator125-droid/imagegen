@@ -1,0 +1,161 @@
+The current implementation is incorrectly treating the entire pasted paragraph as one scene.
+
+This is wrong.
+
+Redesign the script parser completely.
+
+=============================
+SCRIPT ANALYSIS
+=============================
+
+Before searching for images:
+
+1. Read the entire script.
+
+2. Detect every sentence automatically.
+
+3. Split the paragraph into individual sentences.
+
+Do NOT rely only on line breaks.
+
+Also split using:
+
+।
+
+.
+
+?
+
+!
+
+and other sentence-ending punctuation.
+
+Example:
+
+Input:
+
+सुबह की पहली किरण के साथ एक छोटे से पहाड़ी गाँव में रहने वाला आरव अपने घर से स्कूल जाने के लिए निकला। रास्ते में उसने हरे-भरे खेत, रंग-बिरंगे फूल और पेड़ों पर चहचहाते पक्षियों को देखा। कुछ दूर चलने पर उसे एक शांत नदी मिली...
+
+Output:
+
+Scene 1
+सुबह की पहली किरण...
+
+Scene 2
+रास्ते में उसने...
+
+Scene 3
+कुछ दूर चलने पर...
+
+Every sentence should become a separate scene.
+
+=============================
+SCENE DETECTION
+=============================
+
+After splitting:
+
+Analyze every sentence independently.
+
+Never merge multiple scenes.
+
+Every sentence must produce its own search query.
+
+Example:
+
+Sentence 1
+
+सुबह की पहली किरण...
+
+Query
+
+beautiful sunrise in mountain village
+
+--------------------------------
+
+Sentence 2
+
+हरे-भरे खेत...
+
+Query
+
+green fields colorful flowers birds
+
+--------------------------------
+
+Sentence 3
+
+शांत नदी...
+
+Query
+
+peaceful river ducks old fisherman wooden boat
+
+--------------------------------
+
+Sentence 4
+
+लकड़ी का पुल...
+
+Query
+
+children riding bicycles on wooden bridge
+
+--------------------------------
+
+Sentence 5
+
+स्कूल...
+
+Query
+
+teacher explaining science experiment classroom
+
+Continue this process until the last sentence.
+
+=============================
+IMAGE SEARCH
+=============================
+
+Search images separately for EVERY scene.
+
+Never search using the entire paragraph.
+
+Every scene must generate at least:
+
+4 image candidates
+
+Choose the best image.
+
+=============================
+OUTPUT
+=============================
+
+Display
+
+Scene 1
+
+Image
+
+Scene 2
+
+Image
+
+Scene 3
+
+Image
+
+...
+
+until the end.
+
+=============================
+IMPORTANT
+=============================
+
+Even if the user pastes one giant paragraph,
+the application must automatically split it into independent scenes before generating images.
+
+Never generate one image for the whole paragraph.
+
+The application should behave like a storyboard generator instead of a paragraph image search.
