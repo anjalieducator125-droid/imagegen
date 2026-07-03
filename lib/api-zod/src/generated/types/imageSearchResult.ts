@@ -5,6 +5,7 @@
  * Script to Image Finder API
  * OpenAPI spec version: 0.1.0
  */
+import type { AIDebugInfo } from './aIDebugInfo';
 import type { ImageResult } from './imageResult';
 import type { ProviderDebugInfo } from './providerDebugInfo';
 import type { ScriptLineAnalysis } from './scriptLineAnalysis';
@@ -21,4 +22,5 @@ export interface ImageSearchResult {
   analysis?: ScriptLineAnalysis;
   /** Per-provider debug information for each search call */
   providerDebug?: ProviderDebugInfo[];
+  aiDebug?: AIDebugInfo;
 }

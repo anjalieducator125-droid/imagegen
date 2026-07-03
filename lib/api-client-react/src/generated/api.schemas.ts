@@ -86,6 +86,77 @@ export interface ScriptLineAnalysis {
      * @nullable
      */
   timeOfDay?: string | null;
+  /**
+     * AI-detected country (defaults to India for ambiguous Hindi lines)
+     * @nullable
+     */
+  country?: string | null;
+  /**
+     * AI-detected city
+     * @nullable
+     */
+  city?: string | null;
+  /**
+     * AI-detected religion
+     * @nullable
+     */
+  religion?: string | null;
+  /**
+     * AI-detected culture
+     * @nullable
+     */
+  culture?: string | null;
+  /**
+     * AI-detected time period/era
+     * @nullable
+     */
+  timePeriod?: string | null;
+  /**
+     * AI-detected environment/setting type
+     * @nullable
+     */
+  environment?: string | null;
+  /**
+     * AI-detected people description
+     * @nullable
+     */
+  people?: string | null;
+  /**
+     * AI-detected event type
+     * @nullable
+     */
+  eventType?: string | null;
+}
+
+export interface AIDebugInfo {
+  /** Whether AI-powered analysis/verification was used for this line */
+  used: boolean;
+  /**
+     * AI provider used for script analysis (gemini, openrouter, or none)
+     * @nullable
+     */
+  queryAnalysisProvider?: string | null;
+  /** @nullable */
+  queryAnalysisModel?: string | null;
+  /** @nullable */
+  queryAnalysisExecutionMs?: number | null;
+  /** @nullable */
+  queryAnalysisError?: string | null;
+  /** The 3-5 AI-generated optimized English search queries */
+  generatedQueries?: string[];
+  /**
+     * AI provider used for image verification (gemini, openrouter, or none)
+     * @nullable
+     */
+  verificationProvider?: string | null;
+  /** @nullable */
+  verificationModel?: string | null;
+  /** @nullable */
+  verificationExecutionMs?: number | null;
+  /** @nullable */
+  verificationError?: string | null;
+  verifiedCount?: number;
+  rejectedCount?: number;
 }
 
 export interface ImageResult {
@@ -109,6 +180,13 @@ export interface ImageResult {
   alt?: string | null;
   /** Relevance score 0-100 */
   score: number;
+  /**
+     * AI image-verification similarity/context score 0-100 (null if not verified)
+     * @nullable
+     */
+  verificationScore?: number | null;
+  /** Whether this image passed AI context verification (>=80 score) */
+  aiVerified?: boolean;
 }
 
 export interface ProviderDebugInfo {
@@ -145,6 +223,7 @@ export interface ImageSearchResult {
   analysis?: ScriptLineAnalysis;
   /** Per-provider debug information for each search call */
   providerDebug?: ProviderDebugInfo[];
+  aiDebug?: AIDebugInfo;
 }
 
 export interface ImageSettings {

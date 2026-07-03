@@ -159,6 +159,65 @@ components:
         timeOfDay:
           type: ["string", "null"]
           description: Time of day if detectable
+        country:
+          type: ["string", "null"]
+          description: AI-detected country (defaults to India for ambiguous Hindi lines)
+        city:
+          type: ["string", "null"]
+          description: AI-detected city
+        religion:
+          type: ["string", "null"]
+          description: AI-detected religion
+        culture:
+          type: ["string", "null"]
+          description: AI-detected culture
+        timePeriod:
+          type: ["string", "null"]
+          description: AI-detected time period/era
+        environment:
+          type: ["string", "null"]
+          description: AI-detected environment/setting type
+        people:
+          type: ["string", "null"]
+          description: AI-detected people description
+        eventType:
+          type: ["string", "null"]
+          description: AI-detected event type
+
+    AIDebugInfo:
+      type: object
+      required: [used]
+      properties:
+        used:
+          type: boolean
+          description: Whether AI-powered analysis/verification was used for this line
+        queryAnalysisProvider:
+          type: ["string", "null"]
+          description: AI provider used for script analysis (gemini, openrouter, or none)
+        queryAnalysisModel:
+          type: ["string", "null"]
+        queryAnalysisExecutionMs:
+          type: ["number", "null"]
+        queryAnalysisError:
+          type: ["string", "null"]
+        generatedQueries:
+          type: array
+          items:
+            type: string
+          description: The 3-5 AI-generated optimized English search queries
+        verificationProvider:
+          type: ["string", "null"]
+          description: AI provider used for image verification (gemini, openrouter, or none)
+        verificationModel:
+          type: ["string", "null"]
+        verificationExecutionMs:
+          type: ["number", "null"]
+        verificationError:
+          type: ["string", "null"]
+        verifiedCount:
+          type: integer
+        rejectedCount:
+          type: integer
 
     ImageResult:
       type: object
@@ -192,6 +251,12 @@ components:
         score:
           type: number
           description: Relevance score 0-100
+        verificationScore:
+          type: ["number", "null"]
+          description: AI image-verification similarity/context score 0-100 (null if not verified)
+        aiVerified:
+          type: boolean
+          description: Whether this image passed AI context verification (>=80 score)
 
     ProviderDebugInfo:
       type: object
@@ -251,6 +316,8 @@ components:
           items:
             $ref: "#/components/schemas/ProviderDebugInfo"
           description: Per-provider debug information for each search call
+        aiDebug:
+          $ref: "#/components/schemas/AIDebugInfo"
 
     ImageSettings:
       type: object

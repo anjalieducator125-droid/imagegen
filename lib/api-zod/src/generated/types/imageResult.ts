@@ -27,4 +27,11 @@ export interface ImageResult {
   alt?: string | null;
   /** Relevance score 0-100 */
   score: number;
+  /**
+     * AI image-verification similarity/context score 0-100 (null if not verified)
+     * @nullable
+     */
+  verificationScore?: number | null;
+  /** Whether this image passed AI context verification (>=80 score) */
+  aiVerified?: boolean;
 }

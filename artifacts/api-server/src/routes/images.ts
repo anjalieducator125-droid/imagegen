@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
 import { SearchImagesBody, SearchImagesResponse, GetImageSettingsResponse } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import {
+  analyzeScriptLineAI,
+  verifyImageWithAI,
+  runWithConcurrency,
+  isAIConfigured,
+  type ScriptLineContext,
+} from "../lib/aiPipeline";
 
 const router: IRouter = Router();
 
@@ -1122,58 +1129,182 @@ router.post("/images/search", async (req, res): Promise<void> => {
   let translatedText: string | null = null;
   let englishBase: string = lineText;
 
-  if (lang.code !== "en") {
-    translatedText = await translateToEnglish(lineText);
-    if (translatedText) {
-      englishBase = translatedText;
-    }
-  }
-
-  const englishQuery = buildSearchQuery(englishBase);
-
-  if (!englishQuery) {
-    res.status(400).json({ error: "Could not generate a search query from the provided text" });
-    return;
-  }
-
-  const semantics = extractSemantics(englishBase);
-
   const providerPref: ProviderPref =
     provider === "google" || provider === "wikimedia" || provider === "unsplash" || provider === "pixabay" || provider === "pexels"
       ? provider
       : "auto";
 
   try {
-    const { images, primaryProvider, providerDebug } = await searchAllProviders(
-      englishQuery,
-      perPage,
-      orientation,
-      safeSearch,
-      providerPref
+    // -------------------------------------------------------------------
+    // Step 1: AI-powered script line analysis (Gemini -> OpenRouter -> heuristic fallback)
+    // -------------------------------------------------------------------
+    let aiContext: ScriptLineContext | null = null;
+    let aiQueries: string[] = [];
+    const aiUsed = isAIConfigured();
+    let queryAnalysisProvider: string | null = null;
+    let queryAnalysisModel: string | null = null;
+    let queryAnalysisExecutionMs: number | null = null;
+    let queryAnalysisError: string | null = null;
+
+    if (aiUsed) {
+      const aiResult = await analyzeScriptLineAI(lineText);
+      queryAnalysisProvider = aiResult.provider === "none" ? null : aiResult.provider;
+      queryAnalysisModel = aiResult.model;
+      queryAnalysisExecutionMs = aiResult.executionMs;
+      queryAnalysisError = aiResult.error;
+      if (aiResult.success && aiResult.data) {
+        aiContext = aiResult.data;
+        aiQueries = aiResult.data.queries.filter((q) => q && q.trim()).slice(0, 5);
+      }
+    }
+
+    // Fallback: legacy translate + keyword pipeline (used if AI is unconfigured or failed)
+    if (lang.code !== "en") {
+      translatedText = await translateToEnglish(lineText);
+      if (translatedText) englishBase = translatedText;
+    }
+    const heuristicQuery = buildSearchQuery(englishBase);
+    const semantics = extractSemantics(englishBase);
+
+    if (aiQueries.length === 0 && !heuristicQuery) {
+      res.status(400).json({ error: "Could not generate a search query from the provided text" });
+      return;
+    }
+
+    const queriesToRun = aiQueries.length > 0 ? aiQueries : [heuristicQuery];
+    const primaryQuery = queriesToRun[0];
+
+    // -------------------------------------------------------------------
+    // Step 2: run every provider in parallel, for every generated query
+    // -------------------------------------------------------------------
+    const perQueryResults = await Promise.all(
+      queriesToRun.map((q) => searchAllProviders(q, perPage, orientation, safeSearch, providerPref))
     );
+
+    const providerDebug: ProviderDebugInfo[] = perQueryResults.flatMap((r) => r.providerDebug);
+
+    const allImages = perQueryResults.flatMap((r) => r.images);
+    const seenUrls = new Set<string>();
+    const dedupedSorted = allImages
+      .filter((img) => {
+        if (seenUrls.has(img.url)) return false;
+        seenUrls.add(img.url);
+        return true;
+      })
+      .sort((a, b) => b.score - a.score);
+
+    // -------------------------------------------------------------------
+    // Step 3: AI image verification — reject wrong country/religion/culture/etc.
+    // -------------------------------------------------------------------
+    let finalImages: Array<(typeof dedupedSorted)[number] & { verificationScore: number | null; aiVerified: boolean }>;
+    let verificationProvider: string | null = null;
+    let verificationModel: string | null = null;
+    let verificationExecutionMs: number | null = null;
+    let verificationError: string | null = null;
+    let verifiedCount = 0;
+    let rejectedCount = 0;
+
+    if (aiUsed && dedupedSorted.length > 0) {
+      const candidatePool = dedupedSorted.slice(0, Math.min(perPage * 6, 30));
+      let totalMs = 0;
+
+      const verifications = await runWithConcurrency(
+        candidatePool,
+        async (img) => {
+          const result = await verifyImageWithAI(img.thumbnailUrl, lineText, aiContext);
+          return { img, result };
+        },
+        4
+      );
+
+      const verified: typeof finalImages = [];
+      for (const { img, result } of verifications) {
+        totalMs += result.executionMs;
+        if (result.provider !== "none") {
+          verificationProvider = result.provider;
+          verificationModel = result.model;
+        }
+        if (!result.success || !result.data) {
+          verificationError = verificationError ?? result.error;
+          continue;
+        }
+        const passed = result.data.score >= 80;
+        if (passed) {
+          verifiedCount++;
+          verified.push({ ...img, verificationScore: result.data.score, aiVerified: true });
+        } else {
+          rejectedCount++;
+        }
+      }
+      verificationExecutionMs = totalMs;
+
+      verified.sort((a, b) => (b.verificationScore ?? 0) - (a.verificationScore ?? 0));
+
+      if (verified.length > 0) {
+        finalImages = verified.slice(0, perPage);
+      } else {
+        // Verification ran but nothing passed — fall back to top-scored unverified results
+        // rather than returning an empty storyboard line.
+        finalImages = dedupedSorted.slice(0, perPage).map((img) => ({ ...img, verificationScore: null, aiVerified: false }));
+      }
+    } else {
+      finalImages = dedupedSorted.slice(0, perPage).map((img) => ({ ...img, verificationScore: null, aiVerified: false }));
+    }
+
+    for (const dbg of providerDebug) {
+      dbg.filteredCount = finalImages.filter((img) => img.source === dbg.provider).length;
+    }
+
+    const activeSources = new Set(finalImages.map((img) => img.source));
+    const primaryProvider =
+      activeSources.size > 1 ? "multi" : activeSources.size === 1 ? [...activeSources][0] : "unknown";
 
     const analysis = {
       detectedLanguage:     lang.code,
       detectedLanguageName: lang.name,
       translatedText:       translatedText,
-      englishQuery,
+      englishQuery:         primaryQuery,
       subject:   semantics.subject,
       action:    semantics.action,
-      location:  semantics.location,
-      objects:   semantics.objects,
-      emotion:   semantics.emotion,
+      location:  aiContext?.city ?? semantics.location,
+      objects:   aiContext?.objects ?? semantics.objects,
+      emotion:   aiContext?.emotion ?? semantics.emotion,
       timeOfDay: semantics.timeOfDay,
+      country:     aiContext?.country ?? null,
+      city:        aiContext?.city ?? null,
+      religion:    aiContext?.religion ?? null,
+      culture:     aiContext?.culture ?? null,
+      timePeriod:  aiContext?.timePeriod ?? null,
+      environment: aiContext?.environment ?? null,
+      people:      aiContext?.people ?? null,
+      eventType:   aiContext?.eventType ?? null,
+    };
+
+    const aiDebug = {
+      used: aiUsed,
+      queryAnalysisProvider,
+      queryAnalysisModel,
+      queryAnalysisExecutionMs,
+      queryAnalysisError,
+      generatedQueries: aiQueries,
+      verificationProvider,
+      verificationModel,
+      verificationExecutionMs,
+      verificationError,
+      verifiedCount,
+      rejectedCount,
     };
 
     const responseBody = {
       lineNumber,
       lineText,
-      query:        englishQuery,
-      images:       images.map(({ _rank: _r, ...rest }) => rest),
+      query:        primaryQuery,
+      images:       finalImages.map(({ _rank: _r, ...rest }) => rest),
       provider:     primaryProvider,
-      totalResults: images.length,
+      totalResults: finalImages.length,
       analysis,
       providerDebug,
+      aiDebug,
     };
 
     const response = SearchImagesResponse.parse(responseBody);

@@ -48,4 +48,44 @@ export interface ScriptLineAnalysis {
      * @nullable
      */
   timeOfDay?: string | null;
+  /**
+     * AI-detected country (defaults to India for ambiguous Hindi lines)
+     * @nullable
+     */
+  country?: string | null;
+  /**
+     * AI-detected city
+     * @nullable
+     */
+  city?: string | null;
+  /**
+     * AI-detected religion
+     * @nullable
+     */
+  religion?: string | null;
+  /**
+     * AI-detected culture
+     * @nullable
+     */
+  culture?: string | null;
+  /**
+     * AI-detected time period/era
+     * @nullable
+     */
+  timePeriod?: string | null;
+  /**
+     * AI-detected environment/setting type
+     * @nullable
+     */
+  environment?: string | null;
+  /**
+     * AI-detected people description
+     * @nullable
+     */
+  people?: string | null;
+  /**
+     * AI-detected event type
+     * @nullable
+     */
+  eventType?: string | null;
 }

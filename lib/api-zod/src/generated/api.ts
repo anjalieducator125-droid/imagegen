@@ -52,7 +52,9 @@ export const SearchImagesResponse = zod.object({
   "width": zod.number(),
   "height": zod.number(),
   "alt": zod.string().nullish().describe('Alt text for the image'),
-  "score": zod.number().describe('Relevance score 0-100')
+  "score": zod.number().describe('Relevance score 0-100'),
+  "verificationScore": zod.number().nullish().describe('AI image-verification similarity\/context score 0-100 (null if not verified)'),
+  "aiVerified": zod.boolean().optional().describe('Whether this image passed AI context verification (>=80 score)')
 })),
   "provider": zod.string().describe('Primary provider used (or \"multi\" if merged)'),
   "totalResults": zod.number().optional(),
@@ -66,7 +68,15 @@ export const SearchImagesResponse = zod.object({
   "location": zod.string().nullish().describe('Location or setting'),
   "objects": zod.string().nullish().describe('Key objects in the scene'),
   "emotion": zod.string().nullish().describe('Mood or emotion of the scene'),
-  "timeOfDay": zod.string().nullish().describe('Time of day if detectable')
+  "timeOfDay": zod.string().nullish().describe('Time of day if detectable'),
+  "country": zod.string().nullish().describe('AI-detected country (defaults to India for ambiguous Hindi lines)'),
+  "city": zod.string().nullish().describe('AI-detected city'),
+  "religion": zod.string().nullish().describe('AI-detected religion'),
+  "culture": zod.string().nullish().describe('AI-detected culture'),
+  "timePeriod": zod.string().nullish().describe('AI-detected time period\/era'),
+  "environment": zod.string().nullish().describe('AI-detected environment\/setting type'),
+  "people": zod.string().nullish().describe('AI-detected people description'),
+  "eventType": zod.string().nullish().describe('AI-detected event type')
 }).optional(),
   "providerDebug": zod.array(zod.object({
   "provider": zod.string().describe('Provider name (google, wikimedia, unsplash, pixabay, pexels)'),
@@ -77,7 +87,21 @@ export const SearchImagesResponse = zod.object({
   "executionMs": zod.number().describe('Time taken for this provider call in milliseconds'),
   "error": zod.string().nullish().describe('Error message if the provider call failed'),
   "sampleUrls": zod.array(zod.string()).optional().describe('First 10 image URLs returned by the provider')
-})).optional().describe('Per-provider debug information for each search call')
+})).optional().describe('Per-provider debug information for each search call'),
+  "aiDebug": zod.object({
+  "used": zod.boolean().describe('Whether AI-powered analysis\/verification was used for this line'),
+  "queryAnalysisProvider": zod.string().nullish().describe('AI provider used for script analysis (gemini, openrouter, or none)'),
+  "queryAnalysisModel": zod.string().nullish(),
+  "queryAnalysisExecutionMs": zod.number().nullish(),
+  "queryAnalysisError": zod.string().nullish(),
+  "generatedQueries": zod.array(zod.string()).optional().describe('The 3-5 AI-generated optimized English search queries'),
+  "verificationProvider": zod.string().nullish().describe('AI provider used for image verification (gemini, openrouter, or none)'),
+  "verificationModel": zod.string().nullish(),
+  "verificationExecutionMs": zod.number().nullish(),
+  "verificationError": zod.string().nullish(),
+  "verifiedCount": zod.number().optional(),
+  "rejectedCount": zod.number().optional()
+}).optional()
 })
 
 
