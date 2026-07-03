@@ -1144,6 +1144,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
     let queryAnalysisProvider: string | null = null;
     let queryAnalysisModel: string | null = null;
     let queryAnalysisExecutionMs: number | null = null;
+    let queryAnalysisRetryCount = 0;
+    let queryAnalysisFinalFallback = false;
     let queryAnalysisError: string | null = null;
 
     if (aiUsed) {
@@ -1151,6 +1153,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
       queryAnalysisProvider = aiResult.provider === "none" ? null : aiResult.provider;
       queryAnalysisModel = aiResult.model;
       queryAnalysisExecutionMs = aiResult.executionMs;
+      queryAnalysisRetryCount = aiResult.retryCount;
+      queryAnalysisFinalFallback = aiResult.finalFallback;
       queryAnalysisError = aiResult.error;
       if (aiResult.success && aiResult.data) {
         aiContext = aiResult.data;
@@ -1200,6 +1204,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
     let verificationProvider: string | null = null;
     let verificationModel: string | null = null;
     let verificationExecutionMs: number | null = null;
+    let verificationRetryCount = 0;
+    let verificationFinalFallback = false;
     let verificationError: string | null = null;
     let verifiedCount = 0;
     let rejectedCount = 0;
@@ -1207,6 +1213,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
     if (aiUsed && dedupedSorted.length > 0) {
       const candidatePool = dedupedSorted.slice(0, Math.min(perPage * 6, 30));
       let totalMs = 0;
+      let maxRetryCount = 0;
+      let anyFinalFallback = false;
 
       const verifications = await runWithConcurrency(
         candidatePool,
@@ -1220,6 +1228,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
       const verified: typeof finalImages = [];
       for (const { img, result } of verifications) {
         totalMs += result.executionMs;
+        maxRetryCount = Math.max(maxRetryCount, result.retryCount);
+        if (result.finalFallback) anyFinalFallback = true;
         if (result.provider !== "none") {
           verificationProvider = result.provider;
           verificationModel = result.model;
@@ -1237,6 +1247,8 @@ router.post("/images/search", async (req, res): Promise<void> => {
         }
       }
       verificationExecutionMs = totalMs;
+      verificationRetryCount = maxRetryCount;
+      verificationFinalFallback = anyFinalFallback;
 
       verified.sort((a, b) => (b.verificationScore ?? 0) - (a.verificationScore ?? 0));
 
@@ -1285,11 +1297,15 @@ router.post("/images/search", async (req, res): Promise<void> => {
       queryAnalysisProvider,
       queryAnalysisModel,
       queryAnalysisExecutionMs,
+      queryAnalysisRetryCount,
+      queryAnalysisFinalFallback,
       queryAnalysisError,
       generatedQueries: aiQueries,
       verificationProvider,
       verificationModel,
       verificationExecutionMs,
+      verificationRetryCount,
+      verificationFinalFallback,
       verificationError,
       verifiedCount,
       rejectedCount,

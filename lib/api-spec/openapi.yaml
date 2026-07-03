@@ -193,11 +193,17 @@ components:
           description: Whether AI-powered analysis/verification was used for this line
         queryAnalysisProvider:
           type: ["string", "null"]
-          description: AI provider used for script analysis (gemini, openrouter, or none)
+          description: AI provider used for script analysis (nvidia_nim, openrouter, gemini, or none)
         queryAnalysisModel:
           type: ["string", "null"]
         queryAnalysisExecutionMs:
           type: ["number", "null"]
+        queryAnalysisRetryCount:
+          type: integer
+          description: Number of provider attempts made during script analysis before success or exhausting all providers
+        queryAnalysisFinalFallback:
+          type: boolean
+          description: True if AI analysis fully failed and the rule-based heuristic query builder was used instead
         queryAnalysisError:
           type: ["string", "null"]
         generatedQueries:
@@ -207,11 +213,17 @@ components:
           description: The 3-5 AI-generated optimized English search queries
         verificationProvider:
           type: ["string", "null"]
-          description: AI provider used for image verification (gemini, openrouter, or none)
+          description: AI provider used for image verification (nvidia_nim, openrouter, gemini, or none)
         verificationModel:
           type: ["string", "null"]
         verificationExecutionMs:
           type: ["number", "null"]
+        verificationRetryCount:
+          type: integer
+          description: Number of provider attempts made during image verification before success or exhausting all providers
+        verificationFinalFallback:
+          type: boolean
+          description: True if AI verification fully failed and unverified top-scored results were used instead
         verificationError:
           type: ["string", "null"]
         verifiedCount:

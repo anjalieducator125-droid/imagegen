@@ -1,18 +1,28 @@
 import { logger } from "./logger";
 
+const NVIDIA_NIM_API_KEY = process.env.NVIDIA_NIM_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+const NVIDIA_NIM_TEXT_MODEL = "meta/llama-3.1-8b-instruct";
+const NVIDIA_NIM_VISION_MODEL = "meta/llama-3.2-11b-vision-instruct";
 const GEMINI_MODEL = "gemini-2.0-flash";
-const OPENROUTER_MODEL = "openai/gpt-4o-mini";
+// FREE OpenRouter models only — never a paid model. Tried in order; if one is
+// rate-limited upstream we fall through to the next before giving up on OpenRouter.
+const OPENROUTER_FREE_MODELS = [
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "google/gemma-4-26b-a4b-it:free",
+];
 
-export type AIProviderName = "gemini" | "openrouter" | "none";
+export type AIProviderName = "nvidia_nim" | "gemini" | "openrouter" | "none";
 
 export interface AICallResult<T> {
   success: boolean;
   provider: AIProviderName;
   model: string | null;
   executionMs: number;
+  retryCount: number;
+  finalFallback: boolean;
   error: string | null;
   data: T | null;
 }
@@ -53,7 +63,43 @@ async function callGeminiText(prompt: string): Promise<{ text: string; error: nu
   }
 }
 
-async function callOpenRouterText(prompt: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
+async function callNvidiaNimText(prompt: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
+  if (!NVIDIA_NIM_API_KEY) return { text: null, error: "NVIDIA_NIM_API_KEY is not configured" };
+  try {
+    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: NVIDIA_NIM_TEXT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.4,
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!response.ok) {
+      let msg = `HTTP ${response.status}`;
+      try {
+        const body = (await response.json()) as { error?: { message?: string } | string };
+        const errMsg = typeof body.error === "string" ? body.error : body.error?.message;
+        if (errMsg) msg = `HTTP ${response.status} — ${errMsg}`;
+      } catch {
+        // ignore
+      }
+      return { text: null, error: msg };
+    }
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const text = data.choices?.[0]?.message?.content ?? null;
+    if (!text) return { text: null, error: "NVIDIA NIM returned an empty response" };
+    return { text, error: null };
+  } catch (err) {
+    return { text: null, error: `Network/fetch error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function callOpenRouterTextWithModel(prompt: string, model: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
   if (!OPENROUTER_API_KEY) return { text: null, error: "OPENROUTER_API_KEY is not configured" };
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -63,7 +109,7 @@ async function callOpenRouterText(prompt: string): Promise<{ text: string; error
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.4,
       }),
@@ -85,6 +131,21 @@ async function callOpenRouterText(prompt: string): Promise<{ text: string; error
   } catch (err) {
     return { text: null, error: `Network/fetch error: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+// Tries each free OpenRouter model in order until one succeeds. Returns the
+// model that worked (or the last attempted model on total failure) plus a
+// per-model attempt count so callers can report retries accurately.
+async function callOpenRouterText(prompt: string): Promise<{ text: string; error: null; model: string; attempts: number } | { text: null; error: string; model: string; attempts: number }> {
+  if (!OPENROUTER_API_KEY) return { text: null, error: "OPENROUTER_API_KEY is not configured", model: OPENROUTER_FREE_MODELS[0], attempts: 0 };
+  let lastError = "OpenRouter: no free models attempted";
+  for (let i = 0; i < OPENROUTER_FREE_MODELS.length; i++) {
+    const model = OPENROUTER_FREE_MODELS[i];
+    const res = await callOpenRouterTextWithModel(prompt, model);
+    if (res.text) return { text: res.text, error: null, model, attempts: i + 1 };
+    lastError = res.error ?? "Unknown error";
+  }
+  return { text: null, error: lastError, model: OPENROUTER_FREE_MODELS[OPENROUTER_FREE_MODELS.length - 1], attempts: OPENROUTER_FREE_MODELS.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +206,51 @@ async function callGeminiVision(prompt: string, imageUrl: string): Promise<{ tex
   }
 }
 
-async function callOpenRouterVision(prompt: string, imageUrl: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
+async function callNvidiaNimVision(prompt: string, imageUrl: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
+  if (!NVIDIA_NIM_API_KEY) return { text: null, error: "NVIDIA_NIM_API_KEY is not configured" };
+  try {
+    const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: NVIDIA_NIM_VISION_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 300,
+      }),
+    });
+    if (!response.ok) {
+      let msg = `HTTP ${response.status}`;
+      try {
+        const body = (await response.json()) as { error?: { message?: string } | string };
+        const errMsg = typeof body.error === "string" ? body.error : body.error?.message;
+        if (errMsg) msg = `HTTP ${response.status} — ${errMsg}`;
+      } catch {
+        // ignore
+      }
+      return { text: null, error: msg };
+    }
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const text = data.choices?.[0]?.message?.content ?? null;
+    if (!text) return { text: null, error: "NVIDIA NIM vision returned an empty response" };
+    return { text, error: null };
+  } catch (err) {
+    return { text: null, error: `Network/fetch error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+async function callOpenRouterVisionWithModel(prompt: string, imageUrl: string, model: string): Promise<{ text: string; error: null } | { text: null; error: string }> {
   if (!OPENROUTER_API_KEY) return { text: null, error: "OPENROUTER_API_KEY is not configured" };
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -155,7 +260,7 @@ async function callOpenRouterVision(prompt: string, imageUrl: string): Promise<{
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model,
         messages: [
           {
             role: "user",
@@ -185,6 +290,19 @@ async function callOpenRouterVision(prompt: string, imageUrl: string): Promise<{
   } catch (err) {
     return { text: null, error: `Network/fetch error: ${err instanceof Error ? err.message : String(err)}` };
   }
+}
+
+// Tries each free OpenRouter model in order until one succeeds (vision variant).
+async function callOpenRouterVision(prompt: string, imageUrl: string): Promise<{ text: string; error: null; model: string; attempts: number } | { text: null; error: string; model: string; attempts: number }> {
+  if (!OPENROUTER_API_KEY) return { text: null, error: "OPENROUTER_API_KEY is not configured", model: OPENROUTER_FREE_MODELS[0], attempts: 0 };
+  let lastError = "OpenRouter: no free models attempted";
+  for (let i = 0; i < OPENROUTER_FREE_MODELS.length; i++) {
+    const model = OPENROUTER_FREE_MODELS[i];
+    const res = await callOpenRouterVisionWithModel(prompt, imageUrl, model);
+    if (res.text) return { text: res.text, error: null, model, attempts: i + 1 };
+    lastError = res.error ?? "Unknown error";
+  }
+  return { text: null, error: lastError, model: OPENROUTER_FREE_MODELS[OPENROUTER_FREE_MODELS.length - 1], attempts: OPENROUTER_FREE_MODELS.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -269,48 +387,75 @@ Respond with ONLY strict JSON (no markdown fences, no commentary), in exactly th
 }`;
 }
 
+// AI provider priority chain for both script analysis and image verification:
+//   1. NVIDIA NIM   2. OpenRouter (free models only)   3. Gemini   4. rule-based fallback (handled by the caller)
+// Every provider failure automatically retries the next provider — storyboard
+// generation never stops just because one (or all) AI providers are down.
 export async function analyzeScriptLineAI(lineText: string): Promise<AICallResult<ScriptLineContext>> {
   const prompt = buildAnalysisPrompt(lineText);
+  let retryCount = 0;
+  const errors: string[] = [];
+  let totalMs = 0;
 
-  // Priority 1: Gemini
-  const geminiStart = Date.now();
-  const geminiRes = await callGeminiText(prompt);
-  const geminiMs = Date.now() - geminiStart;
-  if (geminiRes.text) {
-    const parsed = extractJson<ScriptLineContext>(geminiRes.text);
+  // Priority 1: NVIDIA NIM
+  const nimStart = Date.now();
+  const nimRes = await callNvidiaNimText(prompt);
+  totalMs += Date.now() - nimStart;
+  retryCount++;
+  if (nimRes.text) {
+    const parsed = extractJson<ScriptLineContext>(nimRes.text);
     if (parsed && Array.isArray(parsed.queries) && parsed.queries.length > 0) {
-      return { success: true, provider: "gemini", model: GEMINI_MODEL, executionMs: geminiMs, error: null, data: parsed };
+      return { success: true, provider: "nvidia_nim", model: NVIDIA_NIM_TEXT_MODEL, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
     }
-    logger.warn({ raw: geminiRes.text.slice(0, 200) }, "Gemini analysis returned unparsable JSON — falling back to OpenRouter");
+    logger.warn({ raw: nimRes.text.slice(0, 200) }, "NVIDIA NIM analysis returned unparsable JSON — falling back to OpenRouter");
+    errors.push("NVIDIA NIM: unparsable JSON response");
   } else {
-    logger.warn({ error: geminiRes.error }, "Gemini script analysis failed — falling back to OpenRouter");
+    logger.warn({ error: nimRes.error }, "NVIDIA NIM script analysis failed — falling back to OpenRouter");
+    errors.push(`NVIDIA NIM: ${nimRes.error}`);
   }
 
-  // Priority 2: OpenRouter
+  // Priority 2: OpenRouter (free models only, tried in order internally)
   const orStart = Date.now();
   const orRes = await callOpenRouterText(prompt);
-  const orMs = Date.now() - orStart;
+  totalMs += Date.now() - orStart;
+  retryCount += orRes.attempts || 1;
   if (orRes.text) {
     const parsed = extractJson<ScriptLineContext>(orRes.text);
     if (parsed && Array.isArray(parsed.queries) && parsed.queries.length > 0) {
-      return { success: true, provider: "openrouter", model: OPENROUTER_MODEL, executionMs: geminiMs + orMs, error: null, data: parsed };
+      return { success: true, provider: "openrouter", model: orRes.model, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
     }
-    return {
-      success: false,
-      provider: "openrouter",
-      model: OPENROUTER_MODEL,
-      executionMs: geminiMs + orMs,
-      error: "OpenRouter returned unparsable JSON",
-      data: null,
-    };
+    logger.warn({ raw: orRes.text.slice(0, 200) }, "OpenRouter analysis returned unparsable JSON — falling back to Gemini");
+    errors.push("OpenRouter: unparsable JSON response");
+  } else {
+    logger.warn({ error: orRes.error }, "OpenRouter script analysis failed — falling back to Gemini");
+    errors.push(`OpenRouter: ${orRes.error}`);
   }
 
+  // Priority 3: Gemini
+  const geminiStart = Date.now();
+  const geminiRes = await callGeminiText(prompt);
+  totalMs += Date.now() - geminiStart;
+  retryCount++;
+  if (geminiRes.text) {
+    const parsed = extractJson<ScriptLineContext>(geminiRes.text);
+    if (parsed && Array.isArray(parsed.queries) && parsed.queries.length > 0) {
+      return { success: true, provider: "gemini", model: GEMINI_MODEL, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
+    }
+    errors.push("Gemini: unparsable JSON response");
+  } else {
+    errors.push(`Gemini: ${geminiRes.error}`);
+  }
+
+  // Priority 4: all AI providers exhausted — caller falls back to the rule-based heuristic pipeline
+  logger.warn({ errors }, "All AI providers failed for script analysis — using rule-based fallback");
   return {
     success: false,
     provider: "none",
     model: null,
-    executionMs: geminiMs + orMs,
-    error: `Gemini: ${geminiRes.error ?? "unavailable"} | OpenRouter: ${orRes.error ?? "unavailable"}`,
+    executionMs: totalMs,
+    retryCount,
+    finalFallback: true,
+    error: errors.join(" | "),
     data: null,
   };
 }
@@ -352,43 +497,67 @@ export async function verifyImageWithAI(
   context: Partial<ScriptLineContext> | null
 ): Promise<AICallResult<ImageVerification>> {
   const prompt = buildVerificationPrompt(lineText, context);
+  let retryCount = 0;
+  const errors: string[] = [];
+  let totalMs = 0;
 
-  const geminiStart = Date.now();
-  const geminiRes = await callGeminiVision(prompt, imageUrl);
-  const geminiMs = Date.now() - geminiStart;
-  if (geminiRes.text) {
-    const parsed = extractJson<ImageVerification>(geminiRes.text);
+  // Priority 1: NVIDIA NIM
+  const nimStart = Date.now();
+  const nimRes = await callNvidiaNimVision(prompt, imageUrl);
+  totalMs += Date.now() - nimStart;
+  retryCount++;
+  if (nimRes.text) {
+    const parsed = extractJson<ImageVerification>(nimRes.text);
     if (parsed && typeof parsed.score === "number") {
-      return { success: true, provider: "gemini", model: GEMINI_MODEL, executionMs: geminiMs, error: null, data: parsed };
+      return { success: true, provider: "nvidia_nim", model: NVIDIA_NIM_VISION_MODEL, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
     }
+    errors.push("NVIDIA NIM: unparsable JSON response");
   } else {
-    logger.warn({ error: geminiRes.error }, "Gemini image verification failed — falling back to OpenRouter");
+    logger.warn({ error: nimRes.error }, "NVIDIA NIM image verification failed — falling back to OpenRouter");
+    errors.push(`NVIDIA NIM: ${nimRes.error}`);
   }
 
+  // Priority 2: OpenRouter (free models only, tried in order internally)
   const orStart = Date.now();
   const orRes = await callOpenRouterVision(prompt, imageUrl);
-  const orMs = Date.now() - orStart;
+  totalMs += Date.now() - orStart;
+  retryCount += orRes.attempts || 1;
   if (orRes.text) {
     const parsed = extractJson<ImageVerification>(orRes.text);
     if (parsed && typeof parsed.score === "number") {
-      return { success: true, provider: "openrouter", model: OPENROUTER_MODEL, executionMs: geminiMs + orMs, error: null, data: parsed };
+      return { success: true, provider: "openrouter", model: orRes.model, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
     }
-    return {
-      success: false,
-      provider: "openrouter",
-      model: OPENROUTER_MODEL,
-      executionMs: geminiMs + orMs,
-      error: "OpenRouter returned unparsable verification JSON",
-      data: null,
-    };
+    errors.push("OpenRouter: unparsable verification JSON");
+  } else {
+    logger.warn({ error: orRes.error }, "OpenRouter image verification failed — falling back to Gemini");
+    errors.push(`OpenRouter: ${orRes.error}`);
   }
 
+  // Priority 3: Gemini
+  const geminiStart = Date.now();
+  const geminiRes = await callGeminiVision(prompt, imageUrl);
+  totalMs += Date.now() - geminiStart;
+  retryCount++;
+  if (geminiRes.text) {
+    const parsed = extractJson<ImageVerification>(geminiRes.text);
+    if (parsed && typeof parsed.score === "number") {
+      return { success: true, provider: "gemini", model: GEMINI_MODEL, executionMs: totalMs, retryCount, finalFallback: false, error: null, data: parsed };
+    }
+    errors.push("Gemini: unparsable verification JSON");
+  } else {
+    errors.push(`Gemini: ${geminiRes.error}`);
+  }
+
+  // Priority 4: all AI providers exhausted — caller falls back to unverified top-scored results
+  logger.warn({ errors }, "All AI providers failed for image verification — using unverified fallback");
   return {
     success: false,
     provider: "none",
     model: null,
-    executionMs: geminiMs + orMs,
-    error: `Gemini: ${geminiRes.error ?? "unavailable"} | OpenRouter: ${orRes.error ?? "unavailable"}`,
+    executionMs: totalMs,
+    retryCount,
+    finalFallback: true,
+    error: errors.join(" | "),
     data: null,
   };
 }
@@ -415,5 +584,5 @@ export async function runWithConcurrency<T, R>(
 }
 
 export function isAIConfigured(): boolean {
-  return Boolean(GEMINI_API_KEY || OPENROUTER_API_KEY);
+  return Boolean(NVIDIA_NIM_API_KEY || GEMINI_API_KEY || OPENROUTER_API_KEY);
 }

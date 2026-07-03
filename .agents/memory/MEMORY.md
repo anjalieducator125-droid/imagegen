@@ -1,0 +1,1 @@
+- [AI provider fallback chain](ai-provider-fallback-chain.md) — script-to-image AI pipeline priority order and quirks (NVIDIA NIM → OpenRouter free → Gemini → rule-based).

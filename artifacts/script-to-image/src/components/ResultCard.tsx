@@ -1,8 +1,8 @@
-import type { ImageSearchResult, ImageResult, ProviderDebugInfo } from '@workspace/api-client-react';
+import type { ImageSearchResult, ImageResult, ProviderDebugInfo, AIDebugInfo } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Copy, Download, ExternalLink, Image as ImageIcon, Globe, Camera, Zap, Languages, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, Link2 } from 'lucide-react';
+import { Copy, Download, ExternalLink, Image as ImageIcon, Globe, Camera, Zap, Languages, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, Link2, Cpu, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { ImagePreviewModal } from './ImagePreviewModal';
@@ -207,6 +207,129 @@ function ProviderDebugPanel({ debugList }: { debugList: ProviderDebugInfo[] }) {
   );
 }
 
+const AI_PROVIDER_BADGE_COLORS: Record<string, string> = {
+  nvidia_nim: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+  openrouter: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  gemini:     'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+};
+
+const AI_PROVIDER_LABELS: Record<string, string> = {
+  nvidia_nim: 'NVIDIA NIM',
+  openrouter: 'OpenRouter (free)',
+  gemini:     'Gemini',
+};
+
+function AIStageRow({
+  title,
+  provider,
+  model,
+  executionMs,
+  retryCount,
+  finalFallback,
+  error,
+}: {
+  title: string;
+  provider?: string | null;
+  model?: string | null;
+  executionMs?: number | null;
+  retryCount?: number;
+  finalFallback?: boolean;
+  error?: string | null;
+}) {
+  return (
+    <div className="space-y-1.5 rounded-md bg-background/60 border border-muted-foreground/10 p-2.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{title}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide flex items-center gap-1 ${
+          provider ? (AI_PROVIDER_BADGE_COLORS[provider] ?? 'bg-muted text-muted-foreground') : 'bg-muted text-muted-foreground'
+        }`}>
+          <Cpu className="w-2.5 h-2.5" />
+          {provider ? (AI_PROVIDER_LABELS[provider] ?? provider) : 'none'}
+        </span>
+        {model && (
+          <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-mono text-muted-foreground">{model}</code>
+        )}
+        {executionMs != null && (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Clock className="w-3 h-3" /> {executionMs}ms
+          </span>
+        )}
+        {!!retryCount && (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <RefreshCw className="w-3 h-3" /> {retryCount} attempt{retryCount === 1 ? '' : 's'}
+          </span>
+        )}
+        {finalFallback ? (
+          <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+            <ShieldAlert className="w-3 h-3" /> Rule-based fallback used
+          </span>
+        ) : provider ? (
+          <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> OK
+          </span>
+        ) : null}
+      </div>
+      {error && (
+        <div className="text-[10px] bg-destructive/10 border border-destructive/30 text-destructive px-2 py-1 rounded font-mono break-all">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AIDebugPanel({ aiDebug }: { aiDebug?: AIDebugInfo }) {
+  const [open, setOpen] = useState(false);
+  if (!aiDebug || !aiDebug.used) return null;
+
+  const hasFallback = Boolean(aiDebug.queryAnalysisFinalFallback || aiDebug.verificationFinalFallback);
+
+  return (
+    <div className="rounded-md border border-dashed border-muted-foreground/30 overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted/30 transition-colors"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span className="flex items-center gap-1.5">
+          {hasFallback
+            ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+            : <Cpu className="w-3.5 h-3.5 text-primary" />}
+          AI Debug Info
+          {hasFallback && <span className="text-amber-600 dark:text-amber-400 font-bold">— fallback used</span>}
+        </span>
+        {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 pt-1 space-y-2 bg-muted/10">
+          <AIStageRow
+            title="Script Analysis"
+            provider={aiDebug.queryAnalysisProvider}
+            model={aiDebug.queryAnalysisModel}
+            executionMs={aiDebug.queryAnalysisExecutionMs}
+            retryCount={aiDebug.queryAnalysisRetryCount}
+            finalFallback={aiDebug.queryAnalysisFinalFallback}
+            error={aiDebug.queryAnalysisError}
+          />
+          <AIStageRow
+            title="Image Verification"
+            provider={aiDebug.verificationProvider}
+            model={aiDebug.verificationModel}
+            executionMs={aiDebug.verificationExecutionMs}
+            retryCount={aiDebug.verificationRetryCount}
+            finalFallback={aiDebug.verificationFinalFallback}
+            error={aiDebug.verificationError}
+          />
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground pt-0.5">
+            <span>Verified: <strong className="text-foreground">{aiDebug.verifiedCount ?? 0}</strong></span>
+            <span>Rejected: <strong className="text-foreground">{aiDebug.rejectedCount ?? 0}</strong></span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ResultCard({ result }: ResultCardProps) {
   const { toast } = useToast();
   const [previewData, setPreviewData] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
@@ -368,7 +491,8 @@ export function ResultCard({ result }: ResultCardProps) {
         </div>
       </div>
 
-      {/* Debug panel — full width below */}
+      {/* Debug panels — full width below */}
+      <AIDebugPanel aiDebug={result.aiDebug} />
       {result.providerDebug && result.providerDebug.length > 0 && (
         <ProviderDebugPanel debugList={result.providerDebug} />
       )}

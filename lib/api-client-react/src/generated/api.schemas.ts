@@ -132,7 +132,7 @@ export interface AIDebugInfo {
   /** Whether AI-powered analysis/verification was used for this line */
   used: boolean;
   /**
-     * AI provider used for script analysis (gemini, openrouter, or none)
+     * AI provider used for script analysis (nvidia_nim, openrouter, gemini, or none)
      * @nullable
      */
   queryAnalysisProvider?: string | null;
@@ -140,12 +140,16 @@ export interface AIDebugInfo {
   queryAnalysisModel?: string | null;
   /** @nullable */
   queryAnalysisExecutionMs?: number | null;
+  /** Number of provider attempts made during script analysis before success or exhausting all providers */
+  queryAnalysisRetryCount?: number;
+  /** True if AI analysis fully failed and the rule-based heuristic query builder was used instead */
+  queryAnalysisFinalFallback?: boolean;
   /** @nullable */
   queryAnalysisError?: string | null;
   /** The 3-5 AI-generated optimized English search queries */
   generatedQueries?: string[];
   /**
-     * AI provider used for image verification (gemini, openrouter, or none)
+     * AI provider used for image verification (nvidia_nim, openrouter, gemini, or none)
      * @nullable
      */
   verificationProvider?: string | null;
@@ -153,6 +157,10 @@ export interface AIDebugInfo {
   verificationModel?: string | null;
   /** @nullable */
   verificationExecutionMs?: number | null;
+  /** Number of provider attempts made during image verification before success or exhausting all providers */
+  verificationRetryCount?: number;
+  /** True if AI verification fully failed and unverified top-scored results were used instead */
+  verificationFinalFallback?: boolean;
   /** @nullable */
   verificationError?: string | null;
   verifiedCount?: number;
