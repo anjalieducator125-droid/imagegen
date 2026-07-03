@@ -283,6 +283,9 @@ components:
         requestUrl:
           type: string
           description: Full request URL with API key redacted
+        httpStatus:
+          type: ["integer", "null"]
+          description: Raw HTTP status code returned by the provider (null if the provider was not called or a network error occurred)
         rawCount:
           type: integer
           description: Number of images returned by the provider before filtering
@@ -316,6 +319,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ImageResult"
+        alternateImages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageResult"
+          description: Extra candidate images (beyond the displayed set) that can be swapped in to replace a single displayed image
         provider:
           type: string
           description: Primary provider used (or "multi" if merged)

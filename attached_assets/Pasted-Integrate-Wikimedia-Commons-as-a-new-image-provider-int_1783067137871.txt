@@ -1,0 +1,162 @@
+Integrate Wikimedia Commons as a new image provider into the existing multi-provider image search system.
+
+Requirements:
+
+1. Use the official Wikimedia Commons API.
+
+API Endpoint:
+https://commons.wikimedia.org/w/api.php
+
+No API key is required.
+
+--------------------------------------------------
+
+SEARCH WORKFLOW
+
+1. Analyze every script line independently.
+
+2. Convert each line into an optimized English search query.
+
+Examples:
+
+"राम मंदिर अयोध्या"
+→ Ayodhya Ram Mandir
+
+"दिल्ली का लाल किला"
+→ Red Fort Delhi
+
+"हिरण जंगल में दौड़ रहा है"
+→ Deer running in forest
+
+3. Search Wikimedia Commons for every query.
+
+4. Fetch up to 10 high-quality images per query.
+
+--------------------------------------------------
+
+IMAGE FILTERING
+
+Only accept:
+
+- JPEG (.jpg)
+- PNG (.png)
+- High-resolution images
+
+Reject:
+
+- SVG
+- Logos
+- Icons
+- Maps (unless explicitly requested)
+- Flags
+- Drawings
+- Low-resolution images
+- Duplicate images
+
+Prefer:
+
+- Real photographs
+- Landscape orientation
+- High-resolution files
+
+--------------------------------------------------
+
+SEARCH PIPELINE
+
+Run Wikimedia in parallel with:
+
+- Google
+- Unsplash
+- Pixabay
+- Pexels
+
+Merge all image results.
+
+Remove duplicates.
+
+Rank images using semantic relevance.
+
+Provider priority:
+
+1. Google
+2. Wikimedia Commons
+3. Unsplash
+4. Pixabay
+5. Pexels
+
+If Google is unavailable, automatically continue with the remaining providers.
+
+--------------------------------------------------
+
+FRONTEND
+
+For every image show:
+
+✓ Provider Name
+✓ Resolution
+✓ Image Source
+✓ Download Button
+
+Allow:
+
+- Download single image
+- Download all images
+- Replace only one image
+- Regenerate only one script line
+
+--------------------------------------------------
+
+DEBUG PANEL
+
+Add Wikimedia Commons to Provider Debug.
+
+Display:
+
+- Query used
+- API URL
+- HTTP Status
+- Images returned
+- Images filtered
+- Execution time
+- Error message (if any)
+
+--------------------------------------------------
+
+PERFORMANCE
+
+Cache Wikimedia responses.
+
+Run all providers in parallel.
+
+Do not block the UI while searching.
+
+--------------------------------------------------
+
+SUCCESS CRITERIA
+
+After integration, searching for:
+
+Ayodhya Ram Mandir
+
+should return real Wikimedia Commons photos if available.
+
+Searching for:
+
+Eiffel Tower
+
+should return real Wikimedia Commons photos.
+
+Searching for:
+
+Taj Mahal
+
+should return real Wikimedia Commons photos.
+
+Searching for:
+
+Lion in forest
+
+should return real Wikimedia Commons photos.
+
+Do not modify existing providers.
+Only add Wikimedia Commons as an additional provider and integrate it into the existing multi-provider ranking pipeline.

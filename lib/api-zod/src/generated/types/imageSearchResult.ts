@@ -16,6 +16,8 @@ export interface ImageSearchResult {
   /** The English search query actually used */
   query: string;
   images: ImageResult[];
+  /** Extra candidate images (beyond the displayed set) that can be swapped in to replace a single displayed image */
+  alternateImages?: ImageResult[];
   /** Primary provider used (or "multi" if merged) */
   provider: string;
   totalResults?: number;

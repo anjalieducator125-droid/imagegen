@@ -56,6 +56,21 @@ export const SearchImagesResponse = zod.object({
   "verificationScore": zod.number().nullish().describe('AI image-verification similarity\/context score 0-100 (null if not verified)'),
   "aiVerified": zod.boolean().optional().describe('Whether this image passed AI context verification (>=80 score)')
 })),
+  "alternateImages": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string().describe('Full resolution image URL'),
+  "thumbnailUrl": zod.string().describe('Thumbnail URL for display'),
+  "mediumUrl": zod.string().optional().describe('Medium resolution URL'),
+  "photographer": zod.string(),
+  "photographerUrl": zod.string(),
+  "source": zod.string().describe('Provider name (google, wikimedia, unsplash, pixabay, pexels)'),
+  "width": zod.number(),
+  "height": zod.number(),
+  "alt": zod.string().nullish().describe('Alt text for the image'),
+  "score": zod.number().describe('Relevance score 0-100'),
+  "verificationScore": zod.number().nullish().describe('AI image-verification similarity\/context score 0-100 (null if not verified)'),
+  "aiVerified": zod.boolean().optional().describe('Whether this image passed AI context verification (>=80 score)')
+})).optional().describe('Extra candidate images (beyond the displayed set) that can be swapped in to replace a single displayed image'),
   "provider": zod.string().describe('Primary provider used (or \"multi\" if merged)'),
   "totalResults": zod.number().optional(),
   "analysis": zod.object({
@@ -82,6 +97,7 @@ export const SearchImagesResponse = zod.object({
   "provider": zod.string().describe('Provider name (google, wikimedia, unsplash, pixabay, pexels)'),
   "query": zod.string().describe('Exact query string sent to the provider'),
   "requestUrl": zod.string().describe('Full request URL with API key redacted'),
+  "httpStatus": zod.number().nullish().describe('Raw HTTP status code returned by the provider (null if the provider was not called or a network error occurred)'),
   "rawCount": zod.number().describe('Number of images returned by the provider before filtering'),
   "filteredCount": zod.number().describe('Number of images remaining after deduplication and filtering'),
   "executionMs": zod.number().describe('Time taken for this provider call in milliseconds'),

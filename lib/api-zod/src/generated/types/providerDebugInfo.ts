@@ -13,6 +13,11 @@ export interface ProviderDebugInfo {
   query: string;
   /** Full request URL with API key redacted */
   requestUrl: string;
+  /**
+     * Raw HTTP status code returned by the provider (null if the provider was not called or a network error occurred)
+     * @nullable
+     */
+  httpStatus?: number | null;
   /** Number of images returned by the provider before filtering */
   rawCount: number;
   /** Number of images remaining after deduplication and filtering */

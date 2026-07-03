@@ -9,9 +9,20 @@ import { exportToJSON, exportToCSV, exportToZIP } from "@/lib/export";
 import { Download, FileJson, FileSpreadsheet, Play, Square, Loader2, Clapperboard, FlaskConical } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useState } from "react";
 
 export function Home() {
   const processor = useScriptProcessor();
+  const [regeneratingLine, setRegeneratingLine] = useState<number | null>(null);
+
+  const handleRegenerateLine = async (lineNumber: number) => {
+    setRegeneratingLine(lineNumber);
+    try {
+      await processor.retryLine(lineNumber);
+    } finally {
+      setRegeneratingLine(null);
+    }
+  };
 
   const hasScenes = processor.parsedLines.length > 0;
   const progress = hasScenes
@@ -168,7 +179,14 @@ export function Home() {
                 const isPending = idx > processor.currentLineIndex && processor.isProcessing;
 
                 if (result) {
-                  return <ResultCard key={scene.lineNumber} result={result} />;
+                  return (
+                    <ResultCard
+                      key={scene.lineNumber}
+                      result={result}
+                      onRegenerateLine={handleRegenerateLine}
+                      isRegenerating={regeneratingLine === scene.lineNumber}
+                    />
+                  );
                 }
 
                 if (isCurrent) {

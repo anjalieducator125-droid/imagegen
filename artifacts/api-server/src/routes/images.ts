@@ -273,6 +273,7 @@ interface ProviderDebugInfo {
   provider: string;
   query: string;
   requestUrl: string;
+  httpStatus: number | null;
   rawCount: number;
   filteredCount: number;
   executionMs: number;
@@ -323,6 +324,7 @@ async function searchGoogle(
         provider: "google",
         query,
         requestUrl: "(not configured — GOOGLE_API_KEY or GOOGLE_CX missing)",
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs: 0,
@@ -376,6 +378,7 @@ async function searchGoogle(
           provider: "google",
           query,
           requestUrl: redactedUrl,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -407,6 +410,7 @@ async function searchGoogle(
         provider: "google",
         query,
         requestUrl: redactedUrl,
+        httpStatus: response.status,
         rawCount: images.length,
         filteredCount: images.length,
         executionMs,
@@ -424,6 +428,7 @@ async function searchGoogle(
         provider: "google",
         query,
         requestUrl: redactedUrl,
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs,
@@ -474,6 +479,7 @@ async function searchPexels(
         provider: "pexels",
         query,
         requestUrl: "(not configured — PEXELS_API_KEY missing)",
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs: 0,
@@ -506,6 +512,7 @@ async function searchPexels(
           provider: "pexels",
           query,
           requestUrl: url,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -536,6 +543,7 @@ async function searchPexels(
         provider: "pexels",
         query,
         requestUrl: url,
+        httpStatus: response.status,
         rawCount: images.length,
         filteredCount: images.length,
         executionMs,
@@ -553,6 +561,7 @@ async function searchPexels(
         provider: "pexels",
         query,
         requestUrl: url,
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs,
@@ -596,6 +605,7 @@ async function searchUnsplash(
         provider: "unsplash",
         query,
         requestUrl: "(not configured — UNSPLASH_ACCESS_KEY missing)",
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs: 0,
@@ -637,6 +647,7 @@ async function searchUnsplash(
           provider: "unsplash",
           query,
           requestUrl: url,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -667,6 +678,7 @@ async function searchUnsplash(
         provider: "unsplash",
         query,
         requestUrl: url,
+        httpStatus: response.status,
         rawCount: images.length,
         filteredCount: images.length,
         executionMs,
@@ -684,6 +696,7 @@ async function searchUnsplash(
         provider: "unsplash",
         query,
         requestUrl: url,
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs,
@@ -729,6 +742,7 @@ async function searchPixabay(
         provider: "pixabay",
         query,
         requestUrl: "(not configured — PIXABAY_API_KEY missing)",
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs: 0,
@@ -764,6 +778,7 @@ async function searchPixabay(
           provider: "pixabay",
           query,
           requestUrl: redactedUrl,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -794,6 +809,7 @@ async function searchPixabay(
         provider: "pixabay",
         query,
         requestUrl: redactedUrl,
+        httpStatus: response.status,
         rawCount: images.length,
         filteredCount: images.length,
         executionMs,
@@ -811,6 +827,7 @@ async function searchPixabay(
         provider: "pixabay",
         query,
         requestUrl: redactedUrl,
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs,
@@ -888,6 +905,7 @@ async function searchWikimedia(
           provider: "wikimedia",
           query,
           requestUrl: url,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -906,6 +924,7 @@ async function searchWikimedia(
           provider: "wikimedia",
           query,
           requestUrl: url,
+          httpStatus: response.status,
           rawCount: 0,
           filteredCount: 0,
           executionMs,
@@ -951,6 +970,7 @@ async function searchWikimedia(
         provider: "wikimedia",
         query,
         requestUrl: url,
+        httpStatus: response.status,
         rawCount,
         filteredCount: images.length,
         executionMs,
@@ -968,6 +988,7 @@ async function searchWikimedia(
         provider: "wikimedia",
         query,
         requestUrl: url,
+        httpStatus: null,
         rawCount: 0,
         filteredCount: 0,
         executionMs,
@@ -1271,6 +1292,14 @@ router.post("/images/search", async (req, res): Promise<void> => {
     const primaryProvider =
       activeSources.size > 1 ? "multi" : activeSources.size === 1 ? [...activeSources][0] : "unknown";
 
+    // Extra candidates (beyond the displayed set) usable to replace a single image
+    // in the frontend without another network round-trip.
+    const finalUrls = new Set(finalImages.map((img) => img.url));
+    const alternateImages = dedupedSorted
+      .filter((img) => !finalUrls.has(img.url))
+      .slice(0, 12)
+      .map(({ _rank: _r, score, ...rest }) => ({ ...rest, score, verificationScore: null, aiVerified: false }));
+
     const analysis = {
       detectedLanguage:     lang.code,
       detectedLanguageName: lang.name,
@@ -1316,6 +1345,7 @@ router.post("/images/search", async (req, res): Promise<void> => {
       lineText,
       query:        primaryQuery,
       images:       finalImages.map(({ _rank: _r, ...rest }) => rest),
+      alternateImages,
       provider:     primaryProvider,
       totalResults: finalImages.length,
       analysis,

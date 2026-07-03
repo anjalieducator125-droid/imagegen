@@ -2,13 +2,15 @@ import type { ImageSearchResult, ImageResult, ProviderDebugInfo, AIDebugInfo } f
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Copy, Download, ExternalLink, Image as ImageIcon, Globe, Camera, Zap, Languages, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, Link2, Cpu, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Copy, Download, ExternalLink, Image as ImageIcon, Globe, Camera, Zap, Languages, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Clock, Link2, Cpu, RefreshCw, ShieldAlert, Shuffle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface ResultCardProps {
   result: ImageSearchResult;
+  onRegenerateLine?: (lineNumber: number) => void;
+  isRegenerating?: boolean;
 }
 
 const PROVIDER_BADGE_STYLES: Record<string, { bg: string; icon: typeof Globe; label: string }> = {
@@ -129,6 +131,15 @@ function ProviderDebugPanel({ debugList }: { debugList: ProviderDebugInfo[] }) {
                   <Clock className="w-3 h-3" />
                   {dbg.executionMs}ms
                 </span>
+                {dbg.httpStatus != null && (
+                  <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${
+                    dbg.httpStatus >= 200 && dbg.httpStatus < 300
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                      : 'bg-destructive/10 text-destructive'
+                  }`}>
+                    HTTP {dbg.httpStatus}
+                  </span>
+                )}
                 <span className="text-[10px] text-muted-foreground">
                   {dbg.rawCount} raw → {dbg.filteredCount} used
                 </span>
@@ -330,9 +341,28 @@ function AIDebugPanel({ aiDebug }: { aiDebug?: AIDebugInfo }) {
   );
 }
 
-export function ResultCard({ result }: ResultCardProps) {
+export function ResultCard({ result, onRegenerateLine, isRegenerating }: ResultCardProps) {
   const { toast } = useToast();
   const [previewData, setPreviewData] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
+
+  const [displayedImages, setDisplayedImages] = useState<ImageResult[]>(result.images);
+  const [alternatePool, setAlternatePool] = useState<ImageResult[]>(result.alternateImages ?? []);
+
+  useEffect(() => {
+    setDisplayedImages(result.images);
+    setAlternatePool(result.alternateImages ?? []);
+  }, [result]);
+
+  const replaceImage = (index: number) => {
+    if (alternatePool.length === 0) {
+      toast({ title: "No alternates available", description: "There are no other candidate images left for this scene.", variant: "destructive" });
+      return;
+    }
+    const [next, ...rest] = alternatePool;
+    const replaced = displayedImages[index];
+    setDisplayedImages(prev => prev.map((img, i) => (i === index ? next : img)));
+    setAlternatePool([...rest, replaced]);
+  };
 
   const copyQuery = () => {
     navigator.clipboard.writeText(result.query);
@@ -369,13 +399,13 @@ export function ResultCard({ result }: ResultCardProps) {
 
   const providerLabel =
     result.provider === 'multi'
-      ? [...new Set(result.images.map((img: ImageResult) => img.source))]
+      ? [...new Set(displayedImages.map((img: ImageResult) => img.source))]
           .map((s) => SINGLE_PROVIDER_LABELS[s as string] ?? s)
           .join(' + ')
       : SINGLE_PROVIDER_LABELS[result.provider] ?? result.provider;
 
-  const topScore = result.images.length > 0
-    ? Math.max(...result.images.map((img: ImageResult) => img.score ?? 0))
+  const topScore = displayedImages.length > 0
+    ? Math.max(...displayedImages.map((img: ImageResult) => img.score ?? 0))
     : 0;
 
   return (
@@ -383,13 +413,27 @@ export function ResultCard({ result }: ResultCardProps) {
       <div className="flex flex-col md:flex-row gap-6">
         {/* Left panel: line info + analysis */}
         <div className="w-full md:w-[340px] shrink-0 flex flex-col gap-3">
-          <div className="flex items-start gap-3">
-            <div className="bg-primary text-primary-foreground text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-              {result.lineNumber}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="bg-primary text-primary-foreground text-sm font-bold w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                {result.lineNumber}
+              </div>
+              <p className="text-sm font-medium leading-relaxed italic text-foreground border-l-2 border-primary/30 pl-3">
+                "{result.lineText}"
+              </p>
             </div>
-            <p className="text-sm font-medium leading-relaxed italic text-foreground border-l-2 border-primary/30 pl-3">
-              "{result.lineText}"
-            </p>
+            {onRegenerateLine && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-7 w-7"
+                onClick={() => onRegenerateLine(result.lineNumber)}
+                disabled={isRegenerating}
+                title="Regenerate this scene"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+              </Button>
+            )}
           </div>
 
           <AnalysisPanel result={result} />
@@ -416,7 +460,7 @@ export function ResultCard({ result }: ResultCardProps) {
 
         {/* Right panel: image grid */}
         <div className="flex-1 min-w-0">
-          {result.images.length === 0 ? (
+          {displayedImages.length === 0 ? (
             <div className="h-full min-h-[160px] bg-muted/30 border border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
               <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
               <p className="text-sm font-medium">No images found</p>
@@ -424,7 +468,7 @@ export function ResultCard({ result }: ResultCardProps) {
             </div>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              {result.images.map((img: ImageResult, idx: number) => (
+              {displayedImages.map((img: ImageResult, idx: number) => (
                 <div
                   key={img.id}
                   className="group relative aspect-square rounded-md overflow-hidden bg-muted cursor-pointer shadow-sm hover:shadow-md transition-shadow"
@@ -479,6 +523,16 @@ export function ResultCard({ result }: ResultCardProps) {
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
+                    <Button
+                      variant="secondary"
+                      size="icon"
+                      className="w-7 h-7 rounded-full bg-white/20 hover:bg-white text-white hover:text-black border-none disabled:opacity-30"
+                      onClick={(e) => { e.stopPropagation(); replaceImage(idx); }}
+                      disabled={alternatePool.length === 0}
+                      title={alternatePool.length === 0 ? "No alternates left" : "Replace with another candidate"}
+                    >
+                      <Shuffle className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
 
                   <div className="absolute bottom-0 inset-x-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
@@ -498,7 +552,7 @@ export function ResultCard({ result }: ResultCardProps) {
       )}
 
       <ImagePreviewModal
-        images={result.images}
+        images={displayedImages}
         initialIndex={previewData.index}
         open={previewData.open}
         onOpenChange={(open) => setPreviewData(prev => ({ ...prev, open }))}
