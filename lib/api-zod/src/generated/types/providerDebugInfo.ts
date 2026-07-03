@@ -7,7 +7,7 @@
  */
 
 export interface ProviderDebugInfo {
-  /** Provider name (google, unsplash, pixabay, pexels) */
+  /** Provider name (google, wikimedia, unsplash, pixabay, pexels) */
   provider: string;
   /** Exact query string sent to the provider */
   query: string;

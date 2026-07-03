@@ -11,11 +11,12 @@ interface SettingsPanelProps {
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
-  auto:     "Auto (Best Match)",
-  google:   "Google Images",
-  unsplash: "Unsplash",
-  pixabay:  "Pixabay",
-  pexels:   "Pexels",
+  auto:      "Auto (Best Match)",
+  google:    "Google Images",
+  wikimedia: "Wikimedia Commons",
+  unsplash:  "Unsplash",
+  pixabay:   "Pixabay",
+  pexels:    "Pexels",
 };
 
 export function SettingsPanel({ settings, setSettings, disabled }: SettingsPanelProps) {

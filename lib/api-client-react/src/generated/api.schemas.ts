@@ -30,7 +30,7 @@ export interface ImageSearchInput {
   lineNumber: number;
   /** The original script line text (any language) */
   lineText: string;
-  /** Provider preference: auto (best), google, unsplash, pixabay, pexels */
+  /** Provider preference: auto (best), google, wikimedia, unsplash, pixabay, pexels */
   provider?: string;
   /**
      * Number of images to return
@@ -98,7 +98,7 @@ export interface ImageResult {
   mediumUrl?: string;
   photographer: string;
   photographerUrl: string;
-  /** Provider name (google, unsplash, pixabay, pexels) */
+  /** Provider name (google, wikimedia, unsplash, pixabay, pexels) */
   source: string;
   width: number;
   height: number;
@@ -112,7 +112,7 @@ export interface ImageResult {
 }
 
 export interface ProviderDebugInfo {
-  /** Provider name (google, unsplash, pixabay, pexels) */
+  /** Provider name (google, wikimedia, unsplash, pixabay, pexels) */
   provider: string;
   /** Exact query string sent to the provider */
   query: string;
@@ -148,7 +148,7 @@ export interface ImageSearchResult {
 }
 
 export interface ImageSettings {
-  /** List of configured providers (auto, google, unsplash, pixabay, pexels) */
+  /** List of configured providers (auto, google, wikimedia, unsplash, pixabay, pexels) */
   availableProviders: string[];
   defaultProvider: string;
   maxPerPage?: number;

@@ -16,7 +16,7 @@ export interface ImageResult {
   mediumUrl?: string;
   photographer: string;
   photographerUrl: string;
-  /** Provider name (google, unsplash, pixabay, pexels) */
+  /** Provider name (google, wikimedia, unsplash, pixabay, pexels) */
   source: string;
   width: number;
   height: number;

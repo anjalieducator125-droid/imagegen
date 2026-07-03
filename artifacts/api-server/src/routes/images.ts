@@ -815,17 +815,175 @@ async function searchPixabay(
 }
 
 // ---------------------------------------------------------------------------
+// Wikimedia Commons search (no API key required)
+// ---------------------------------------------------------------------------
+interface WikimediaImageInfo {
+  url: string;
+  width: number;
+  height: number;
+  mime: string;
+  thumburl?: string;
+  extmetadata?: {
+    Artist?: { value: string };
+    LicenseShortName?: { value: string };
+  };
+}
+
+interface WikimediaPage {
+  pageid: number;
+  title: string;
+  imageinfo?: WikimediaImageInfo[];
+}
+
+interface WikimediaResponse {
+  query?: { pages?: Record<string, WikimediaPage> };
+  error?: { code: string; info: string };
+}
+
+const REJECTED_TITLE_PATTERN = /logo|icon|flag|map|symbol|coat_of_arms|seal_of|emblem|diagram|chart|graph/i;
+const MIN_DIMENSION = 500;
+
+async function searchWikimedia(
+  query: string,
+  num: number,
+  orientation: string,
+  _safeSearch: boolean
+): Promise<{ images: RawImage[]; debug: ProviderDebugInfo }> {
+  const startMs = Date.now();
+
+  const searchLimit = Math.min(Math.max(num * 3, 10), 30);
+  const params = new URLSearchParams({
+    action: "query",
+    generator: "search",
+    gsrnamespace: "6",
+    gsrsearch: `filetype:bitmap ${query}`,
+    gsrlimit: String(searchLimit),
+    prop: "imageinfo",
+    iiprop: "url|size|mime|extmetadata",
+    iiurlwidth: "800",
+    format: "json",
+    origin: "*",
+  });
+  const url = `https://commons.wikimedia.org/w/api.php?${params.toString()}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "ScriptToImageFinder/1.0 (Replit app)" },
+    });
+    const executionMs = Date.now() - startMs;
+
+    if (!response.ok) {
+      const errorMsg = `HTTP ${response.status} ${response.statusText}`;
+      logger.warn({ status: response.status }, "Wikimedia Commons API returned error");
+      return {
+        images: [],
+        debug: {
+          provider: "wikimedia",
+          query,
+          requestUrl: url,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: errorMsg,
+          sampleUrls: [],
+        },
+      };
+    }
+
+    const data = (await response.json()) as WikimediaResponse;
+
+    if (data.error) {
+      return {
+        images: [],
+        debug: {
+          provider: "wikimedia",
+          query,
+          requestUrl: url,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: `${data.error.code}: ${data.error.info}`,
+          sampleUrls: [],
+        },
+      };
+    }
+
+    const pages = Object.values(data.query?.pages ?? {});
+    const rawCount = pages.length;
+
+    const filtered = pages.filter((page) => {
+      const info = page.imageinfo?.[0];
+      if (!info) return false;
+      if (info.mime !== "image/jpeg" && info.mime !== "image/png") return false;
+      if (info.width < MIN_DIMENSION || info.height < MIN_DIMENSION) return false;
+      if (REJECTED_TITLE_PATTERN.test(page.title)) return false;
+      return true;
+    });
+
+    const images: RawImage[] = filtered.map((page, idx) => {
+      const info = page.imageinfo![0];
+      const cleanTitle = page.title.replace(/^File:/, "").replace(/\.[a-zA-Z]+$/, "");
+      return {
+        id:              `wikimedia_${page.pageid}`,
+        url:             info.url,
+        thumbnailUrl:    info.thumburl ?? info.url,
+        mediumUrl:       info.thumburl ?? info.url,
+        photographer:    info.extmetadata?.Artist?.value?.replace(/<[^>]+>/g, "").trim() || "Wikimedia Commons",
+        photographerUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title)}`,
+        source:          "wikimedia",
+        width:           info.width,
+        height:          info.height,
+        alt:             cleanTitle,
+        _rank:           idx,
+      };
+    });
+
+    return {
+      images,
+      debug: {
+        provider: "wikimedia",
+        query,
+        requestUrl: url,
+        rawCount,
+        filteredCount: images.length,
+        executionMs,
+        error: null,
+        sampleUrls: images.slice(0, 10).map((img) => img.url),
+      },
+    };
+  } catch (err) {
+    const executionMs = Date.now() - startMs;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, "Wikimedia Commons search failed");
+    return {
+      images: [],
+      debug: {
+        provider: "wikimedia",
+        query,
+        requestUrl: url,
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs,
+        error: `Network/fetch error: ${errorMsg}`,
+        sampleUrls: [],
+      },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Multi-provider search + merge
 // ---------------------------------------------------------------------------
-type ProviderPref = "auto" | "google" | "unsplash" | "pixabay" | "pexels";
+type ProviderPref = "auto" | "google" | "wikimedia" | "unsplash" | "pixabay" | "pexels";
 
 // Priority order used to break score ties in "auto" mode:
-// 1. Google Custom Search  2. Unsplash  3. Pixabay  4. Pexels
+// 1. Google  2. Wikimedia Commons  3. Unsplash  4. Pixabay  5. Pexels
 const PROVIDER_PRIORITY: Record<string, number> = {
   google: 0,
-  unsplash: 1,
-  pixabay: 2,
-  pexels: 3,
+  wikimedia: 1,
+  unsplash: 2,
+  pixabay: 3,
+  pexels: 4,
 };
 
 async function searchAllProviders(
@@ -842,9 +1000,12 @@ async function searchAllProviders(
   const shouldAttempt = (name: ProviderPref) => providerPref === name || providerPref === "auto";
 
   // Run every configured provider in parallel — continue even if one fails.
-  const [googleResult, unsplashResult, pixabayResult, pexelsResult] = await Promise.all([
+  const [googleResult, wikimediaResult, unsplashResult, pixabayResult, pexelsResult] = await Promise.all([
     shouldAttempt("google")
       ? searchGoogle(query, perPage, orientation, safeSearch)
+      : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
+    shouldAttempt("wikimedia")
+      ? searchWikimedia(query, perPage, orientation, safeSearch)
       : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
     shouldAttempt("unsplash")
       ? searchUnsplash(query, perPage, orientation, safeSearch)
@@ -859,6 +1020,7 @@ async function searchAllProviders(
 
   const results = [
     { name: "google", result: googleResult },
+    { name: "wikimedia", result: wikimediaResult },
     { name: "unsplash", result: unsplashResult },
     { name: "pixabay", result: pixabayResult },
     { name: "pexels", result: pexelsResult },
@@ -917,6 +1079,7 @@ async function searchAllProviders(
 function getAvailableProviders(): string[] {
   const providers: string[] = ["auto"];
   if (GOOGLE_API_KEY && GOOGLE_CX) providers.push("google");
+  providers.push("wikimedia");
   if (UNSPLASH_ACCESS_KEY) providers.push("unsplash");
   if (PIXABAY_API_KEY) providers.push("pixabay");
   if (PEXELS_API_KEY) providers.push("pexels");
@@ -976,7 +1139,7 @@ router.post("/images/search", async (req, res): Promise<void> => {
   const semantics = extractSemantics(englishBase);
 
   const providerPref: ProviderPref =
-    provider === "google" || provider === "unsplash" || provider === "pixabay" || provider === "pexels"
+    provider === "google" || provider === "wikimedia" || provider === "unsplash" || provider === "pixabay" || provider === "pexels"
       ? provider
       : "auto";
 

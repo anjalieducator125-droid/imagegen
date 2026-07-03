@@ -12,10 +12,11 @@ interface ResultCardProps {
 }
 
 const PROVIDER_BADGE_STYLES: Record<string, { bg: string; icon: typeof Globe; label: string }> = {
-  google:   { bg: 'bg-blue-600/90',    icon: Globe,  label: 'Google' },
-  unsplash: { bg: 'bg-slate-800/90',   icon: Camera, label: 'Unsplash' },
-  pixabay:  { bg: 'bg-lime-600/90',    icon: ImageIcon, label: 'Pixabay' },
-  pexels:   { bg: 'bg-emerald-600/90', icon: Camera, label: 'Pexels' },
+  google:    { bg: 'bg-blue-600/90',    icon: Globe,     label: 'Google' },
+  wikimedia: { bg: 'bg-neutral-700/90', icon: Globe,     label: 'Wikimedia' },
+  unsplash:  { bg: 'bg-slate-800/90',   icon: Camera,    label: 'Unsplash' },
+  pixabay:   { bg: 'bg-lime-600/90',    icon: ImageIcon, label: 'Pixabay' },
+  pexels:    { bg: 'bg-emerald-600/90', icon: Camera,    label: 'Pexels' },
 };
 
 function ProviderBadge({ source }: { source: string }) {
@@ -77,10 +78,11 @@ function AnalysisPanel({ result }: { result: ImageSearchResult }) {
 }
 
 const DEBUG_BADGE_COLORS: Record<string, string> = {
-  google:   'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  unsplash: 'bg-slate-200 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
-  pixabay:  'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
-  pexels:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  google:    'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  wikimedia: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300',
+  unsplash:  'bg-slate-200 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
+  pixabay:   'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
+  pexels:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
 };
 
 function ProviderDebugPanel({ debugList }: { debugList: ProviderDebugInfo[] }) {
@@ -235,10 +237,11 @@ export function ResultCard({ result }: ResultCardProps) {
   };
 
   const SINGLE_PROVIDER_LABELS: Record<string, string> = {
-    google:   'Google Images',
-    unsplash: 'Unsplash',
-    pixabay:  'Pixabay',
-    pexels:   'Pexels',
+    google:    'Google Images',
+    wikimedia: 'Wikimedia Commons',
+    unsplash:  'Unsplash',
+    pixabay:   'Pixabay',
+    pexels:    'Pexels',
   };
 
   const providerLabel =
@@ -313,8 +316,14 @@ export function ResultCard({ result }: ResultCardProps) {
 
                   <ProviderBadge source={img.source} />
 
+                  {img.width != null && img.height != null && (
+                    <span className="absolute top-1.5 right-1.5 z-10 bg-black/60 text-white text-[9px] font-medium px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm">
+                      {img.width}×{img.height}
+                    </span>
+                  )}
+
                   {img.score != null && (
-                    <span className="absolute top-1.5 right-1.5 z-10 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm">
+                    <span className="absolute top-7 right-1.5 z-10 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm">
                       {img.score}
                     </span>
                   )}

@@ -31,7 +31,7 @@ export const searchImagesBodySafeSearchDefault = true;
 export const SearchImagesBody = zod.object({
   "lineNumber": zod.number().describe('The line number in the script'),
   "lineText": zod.string().describe('The original script line text (any language)'),
-  "provider": zod.string().default(searchImagesBodyProviderDefault).describe('Provider preference: auto (best), google, unsplash, pixabay, pexels'),
+  "provider": zod.string().default(searchImagesBodyProviderDefault).describe('Provider preference: auto (best), google, wikimedia, unsplash, pixabay, pexels'),
   "perPage": zod.number().min(1).max(searchImagesBodyPerPageMax).default(searchImagesBodyPerPageDefault).describe('Number of images to return'),
   "orientation": zod.enum(['landscape', 'portrait', 'square']).default(searchImagesBodyOrientationDefault).describe('Image orientation preference'),
   "safeSearch": zod.boolean().default(searchImagesBodySafeSearchDefault).describe('Whether to enable safe search')
@@ -48,7 +48,7 @@ export const SearchImagesResponse = zod.object({
   "mediumUrl": zod.string().optional().describe('Medium resolution URL'),
   "photographer": zod.string(),
   "photographerUrl": zod.string(),
-  "source": zod.string().describe('Provider name (google, unsplash, pixabay, pexels)'),
+  "source": zod.string().describe('Provider name (google, wikimedia, unsplash, pixabay, pexels)'),
   "width": zod.number(),
   "height": zod.number(),
   "alt": zod.string().nullish().describe('Alt text for the image'),
@@ -69,7 +69,7 @@ export const SearchImagesResponse = zod.object({
   "timeOfDay": zod.string().nullish().describe('Time of day if detectable')
 }).optional(),
   "providerDebug": zod.array(zod.object({
-  "provider": zod.string().describe('Provider name (google, unsplash, pixabay, pexels)'),
+  "provider": zod.string().describe('Provider name (google, wikimedia, unsplash, pixabay, pexels)'),
   "query": zod.string().describe('Exact query string sent to the provider'),
   "requestUrl": zod.string().describe('Full request URL with API key redacted'),
   "rawCount": zod.number().describe('Number of images returned by the provider before filtering'),
@@ -85,7 +85,7 @@ export const SearchImagesResponse = zod.object({
  * @summary Get available image providers and settings
  */
 export const GetImageSettingsResponse = zod.object({
-  "availableProviders": zod.array(zod.string()).describe('List of configured providers (auto, google, unsplash, pixabay, pexels)'),
+  "availableProviders": zod.array(zod.string()).describe('List of configured providers (auto, google, wikimedia, unsplash, pixabay, pexels)'),
   "defaultProvider": zod.string(),
   "maxPerPage": zod.number().optional()
 })
