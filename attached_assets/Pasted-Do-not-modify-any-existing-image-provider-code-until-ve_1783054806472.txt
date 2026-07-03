@@ -1,0 +1,153 @@
+Do not modify any existing image provider code until verification is complete.
+
+I have added the following secrets to Replit:
+
+- GEMINI_API_KEY
+- OPENROUTER_API_KEY
+
+First, verify that both secrets are loaded successfully.
+
+For each key, report:
+
+1. Secret Name
+2. Present (Yes/No)
+3. Loaded Successfully (Yes/No)
+4. API Connection Test (Success/Failed)
+5. Model Name Used
+6. Response Time
+7. Any Error Message
+
+Do NOT reveal the actual API keys.
+
+--------------------------------------------------
+
+If both APIs are working successfully, integrate AI-powered Script Analysis into the application.
+
+AI Priority Order:
+
+1. Gemini
+2. OpenRouter
+
+If Gemini fails, automatically switch to OpenRouter.
+
+If OpenRouter also fails, continue using the existing keyword search system.
+
+--------------------------------------------------
+
+AI SCRIPT ANALYSIS
+
+For every script line:
+
+1. Detect:
+- Country
+- City
+- Religion
+- Culture
+- Language
+- Time Period
+- Environment
+- People
+- Objects
+- Event Type
+- Emotion
+
+2. Convert the script into 3–5 optimized English search queries.
+
+Example:
+
+Input:
+राम मंदिर में श्रद्धालु पूजा कर रहे हैं।
+
+Output:
+
+- Ayodhya Ram Mandir devotees praying
+- Hindu devotees worship inside Ram Mandir
+- Ram Mandir Ayodhya temple prayer ceremony
+- Indian Hindu temple worship
+- Ram Mandir interior real photo
+
+--------------------------------------------------
+
+SEARCH
+
+Use those queries to search:
+
+- Wikimedia Commons
+- Unsplash
+- Pixabay
+- Pexels
+- Google (if available)
+
+Run every provider in parallel.
+
+Merge all results.
+
+Remove duplicates.
+
+Rank by semantic relevance.
+
+--------------------------------------------------
+
+AI IMAGE VERIFICATION
+
+After images are collected:
+
+Compare every image with the script line.
+
+Reject images that:
+
+- Belong to the wrong country
+- Wrong religion
+- Wrong culture
+- Wrong landmark
+- Wrong person
+- Wrong event
+- Wrong object
+
+Only keep highly relevant images.
+
+--------------------------------------------------
+
+HINDI CONTEXT
+
+If the script language is Hindi and no country is mentioned,
+
+assume India by default.
+
+Examples:
+
+गरीब लड़का
+→ Poor Indian village boy
+
+सरकारी स्कूल
+→ Government school India classroom
+
+राम मंदिर
+→ Ram Mandir Ayodhya Uttar Pradesh India
+
+--------------------------------------------------
+
+DEBUG PANEL
+
+Display:
+
+- AI Provider Used (Gemini/OpenRouter)
+- Model Name
+- Generated Search Queries
+- Search Providers Used
+- Verification Score
+- Final Selected Provider
+- Execution Time
+
+--------------------------------------------------
+
+Finally, run live verification using these test queries:
+
+1. राम मंदिर अयोध्या
+2. गरीब भारतीय लड़का
+3. ताजमहल
+4. भारतीय किसान खेत में काम कर रहा है
+
+Show the generated English queries and verify that the returned images match the script context.
+
+Do not expose any API keys in the output.
