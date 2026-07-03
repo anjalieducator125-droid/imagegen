@@ -12,7 +12,7 @@ export interface ImageSearchInput {
   lineNumber: number;
   /** The original script line text (any language) */
   lineText: string;
-  /** Provider preference: auto (best), google, pexels */
+  /** Provider preference: auto (best), google, unsplash, pixabay, pexels */
   provider?: string;
   /**
      * Number of images to return

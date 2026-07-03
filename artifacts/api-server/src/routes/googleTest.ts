@@ -26,8 +26,8 @@ router.get("/google-test", async (_req, res): Promise<void> => {
   const query = "Ayodhya Ram Mandir";
 
   const params = new URLSearchParams({
-    key: GOOGLE_API_KEY,
-    cx: GOOGLE_CX,
+    key: GOOGLE_API_KEY as string,
+    cx: GOOGLE_CX as string,
     q: query,
     searchType: "image",
     num: "10",

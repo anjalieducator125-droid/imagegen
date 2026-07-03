@@ -7,6 +7,8 @@ const router: IRouter = Router();
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_CX = process.env.GOOGLE_CX;
+const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
+const PIXABAY_API_KEY = process.env.PIXABAY_API_KEY;
 
 // ---------------------------------------------------------------------------
 // In-memory result cache (10-minute TTL)
@@ -18,8 +20,8 @@ interface CacheEntry {
 const resultCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
-function getCacheKey(lineText: string, perPage: number, orientation: string): string {
-  return `${lineText.trim().toLowerCase()}:${perPage}:${orientation}`;
+function getCacheKey(lineText: string, perPage: number, orientation: string, provider: string): string {
+  return `${lineText.trim().toLowerCase()}:${perPage}:${orientation}:${provider}`;
 }
 
 function getFromCache(key: string): unknown | null {
@@ -555,9 +557,276 @@ async function searchPexels(
 }
 
 // ---------------------------------------------------------------------------
+// Unsplash search
+// ---------------------------------------------------------------------------
+interface UnsplashPhoto {
+  id: string;
+  width: number;
+  height: number;
+  urls: { raw: string; full: string; regular: string; small: string; thumb: string };
+  links: { html: string };
+  user: { name: string; links: { html: string } };
+  alt_description: string | null;
+}
+
+interface UnsplashResponse {
+  total: number;
+  results: UnsplashPhoto[];
+}
+
+async function searchUnsplash(
+  query: string,
+  num: number,
+  orientation: string,
+  _safeSearch: boolean
+): Promise<{ images: RawImage[]; debug: ProviderDebugInfo }> {
+  const startMs = Date.now();
+
+  if (!UNSPLASH_ACCESS_KEY) {
+    return {
+      images: [],
+      debug: {
+        provider: "unsplash",
+        query,
+        requestUrl: "(not configured — UNSPLASH_ACCESS_KEY missing)",
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs: 0,
+        error: "Unsplash is not configured: UNSPLASH_ACCESS_KEY environment variable is missing.",
+        sampleUrls: [],
+      },
+    };
+  }
+
+  const unsplashOrientation =
+    orientation === "landscape" ? "landscape" :
+    orientation === "portrait"  ? "portrait"  : "squarish";
+
+  const params = new URLSearchParams({
+    query,
+    per_page: String(Math.min(num * 2, 15)),
+    orientation: unsplashOrientation,
+  });
+  const url = `https://api.unsplash.com/search/photos?${params.toString()}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` },
+    });
+    const executionMs = Date.now() - startMs;
+
+    if (!response.ok) {
+      let errorMsg = `HTTP ${response.status} ${response.statusText}`;
+      try {
+        const body = (await response.json()) as { errors?: string[] };
+        if (body.errors?.length) errorMsg = `HTTP ${response.status} — ${body.errors.join(", ")}`;
+      } catch {
+        // ignore parse errors, keep default message
+      }
+      logger.warn({ status: response.status }, "Unsplash API returned error");
+      return {
+        images: [],
+        debug: {
+          provider: "unsplash",
+          query,
+          requestUrl: url,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: errorMsg,
+          sampleUrls: [],
+        },
+      };
+    }
+
+    const data = (await response.json()) as UnsplashResponse;
+    const images: RawImage[] = (data.results ?? []).map((photo, idx) => ({
+      id:              photo.id,
+      url:             photo.urls.full,
+      thumbnailUrl:    photo.urls.small,
+      mediumUrl:       photo.urls.regular,
+      photographer:    photo.user.name,
+      photographerUrl: photo.user.links.html,
+      source:          "unsplash",
+      width:           photo.width,
+      height:          photo.height,
+      alt:             photo.alt_description ?? null,
+      _rank:           idx,
+    }));
+
+    return {
+      images,
+      debug: {
+        provider: "unsplash",
+        query,
+        requestUrl: url,
+        rawCount: images.length,
+        filteredCount: images.length,
+        executionMs,
+        error: null,
+        sampleUrls: images.slice(0, 10).map((img) => img.url),
+      },
+    };
+  } catch (err) {
+    const executionMs = Date.now() - startMs;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, "Unsplash search failed");
+    return {
+      images: [],
+      debug: {
+        provider: "unsplash",
+        query,
+        requestUrl: url,
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs,
+        error: `Network/fetch error: ${errorMsg}`,
+        sampleUrls: [],
+      },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pixabay search
+// ---------------------------------------------------------------------------
+interface PixabayHit {
+  id: number;
+  pageURL: string;
+  largeImageURL: string;
+  webformatURL: string;
+  previewURL: string;
+  imageWidth: number;
+  imageHeight: number;
+  user: string;
+  tags: string;
+}
+
+interface PixabayResponse {
+  totalHits: number;
+  hits: PixabayHit[];
+}
+
+async function searchPixabay(
+  query: string,
+  num: number,
+  orientation: string,
+  safeSearch: boolean
+): Promise<{ images: RawImage[]; debug: ProviderDebugInfo }> {
+  const startMs = Date.now();
+
+  if (!PIXABAY_API_KEY) {
+    return {
+      images: [],
+      debug: {
+        provider: "pixabay",
+        query,
+        requestUrl: "(not configured — PIXABAY_API_KEY missing)",
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs: 0,
+        error: "Pixabay is not configured: PIXABAY_API_KEY environment variable is missing.",
+        sampleUrls: [],
+      },
+    };
+  }
+
+  const pixabayOrientation = orientation === "portrait" ? "vertical" : "horizontal";
+
+  const params = new URLSearchParams({
+    key: PIXABAY_API_KEY,
+    q: query,
+    image_type: "photo",
+    orientation: pixabayOrientation,
+    safesearch: safeSearch ? "true" : "false",
+    per_page: String(Math.min(Math.max(num * 2, 3), 20)),
+  });
+  const rawUrl = `https://pixabay.com/api/?${params.toString()}`;
+  const redactedUrl = rawUrl.replace(/([?&]key=)[^&]*/g, "$1[REDACTED]");
+
+  try {
+    const response = await fetch(rawUrl);
+    const executionMs = Date.now() - startMs;
+
+    if (!response.ok) {
+      const errorMsg = `HTTP ${response.status} ${response.statusText}`;
+      logger.warn({ status: response.status }, "Pixabay API returned error");
+      return {
+        images: [],
+        debug: {
+          provider: "pixabay",
+          query,
+          requestUrl: redactedUrl,
+          rawCount: 0,
+          filteredCount: 0,
+          executionMs,
+          error: errorMsg,
+          sampleUrls: [],
+        },
+      };
+    }
+
+    const data = (await response.json()) as PixabayResponse;
+    const images: RawImage[] = (data.hits ?? []).map((hit, idx) => ({
+      id:              String(hit.id),
+      url:             hit.largeImageURL,
+      thumbnailUrl:    hit.previewURL,
+      mediumUrl:       hit.webformatURL,
+      photographer:    hit.user,
+      photographerUrl: hit.pageURL,
+      source:          "pixabay",
+      width:           hit.imageWidth,
+      height:          hit.imageHeight,
+      alt:             hit.tags ?? null,
+      _rank:           idx,
+    }));
+
+    return {
+      images,
+      debug: {
+        provider: "pixabay",
+        query,
+        requestUrl: redactedUrl,
+        rawCount: images.length,
+        filteredCount: images.length,
+        executionMs,
+        error: null,
+        sampleUrls: images.slice(0, 10).map((img) => img.url),
+      },
+    };
+  } catch (err) {
+    const executionMs = Date.now() - startMs;
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err }, "Pixabay search failed");
+    return {
+      images: [],
+      debug: {
+        provider: "pixabay",
+        query,
+        requestUrl: redactedUrl,
+        rawCount: 0,
+        filteredCount: 0,
+        executionMs,
+        error: `Network/fetch error: ${errorMsg}`,
+        sampleUrls: [],
+      },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Multi-provider search + merge
 // ---------------------------------------------------------------------------
-type ProviderPref = "auto" | "google" | "pexels";
+type ProviderPref = "auto" | "google" | "unsplash" | "pixabay" | "pexels";
+
+// Priority order used to break score ties in "auto" mode:
+// 1. Google Custom Search  2. Unsplash  3. Pixabay  4. Pexels
+const PROVIDER_PRIORITY: Record<string, number> = {
+  google: 0,
+  unsplash: 1,
+  pixabay: 2,
+  pexels: 3,
+};
 
 async function searchAllProviders(
   query: string,
@@ -570,42 +839,52 @@ async function searchAllProviders(
   primaryProvider: string;
   providerDebug: ProviderDebugInfo[];
 }> {
-  const fetchGoogle = providerPref !== "pexels"  && Boolean(GOOGLE_API_KEY && GOOGLE_CX);
-  const fetchPexels = providerPref !== "google"  && Boolean(PEXELS_API_KEY);
+  const shouldAttempt = (name: ProviderPref) => providerPref === name || providerPref === "auto";
 
-  // Always attempt Google if requested — do NOT silently skip
-  const shouldAttemptGoogle = providerPref === "google" || providerPref === "auto";
-  const shouldAttemptPexels = providerPref === "pexels" || providerPref === "auto";
-
-  const [googleResult, pexelsResult] = await Promise.all([
-    shouldAttemptGoogle
+  // Run every configured provider in parallel — continue even if one fails.
+  const [googleResult, unsplashResult, pixabayResult, pexelsResult] = await Promise.all([
+    shouldAttempt("google")
       ? searchGoogle(query, perPage, orientation, safeSearch)
       : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
-    shouldAttemptPexels
+    shouldAttempt("unsplash")
+      ? searchUnsplash(query, perPage, orientation, safeSearch)
+      : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
+    shouldAttempt("pixabay")
+      ? searchPixabay(query, perPage, orientation, safeSearch)
+      : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
+    shouldAttempt("pexels")
       ? searchPexels(query, perPage, orientation, safeSearch)
       : Promise.resolve<{ images: RawImage[]; debug: ProviderDebugInfo } | null>(null),
   ]);
 
-  const googleRaw = googleResult?.images ?? [];
-  const pexelsRaw = pexelsResult?.images ?? [];
+  const results = [
+    { name: "google", result: googleResult },
+    { name: "unsplash", result: unsplashResult },
+    { name: "pixabay", result: pixabayResult },
+    { name: "pexels", result: pexelsResult },
+  ];
+
   const debugList: ProviderDebugInfo[] = [];
-
-  if (googleResult) debugList.push(googleResult.debug);
-  if (pexelsResult) debugList.push(pexelsResult.debug);
-
-  const googleScored = googleRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
-  const pexelsScored = pexelsRaw.map((img) => ({ ...img, score: scoreImage(img, orientation) }));
+  for (const { result } of results) {
+    if (result) debugList.push(result.debug);
+  }
 
   let merged: (RawImage & { score: number })[];
 
   if (providerPref === "auto") {
-    merged = [...googleScored, ...pexelsScored].sort((a, b) => b.score - a.score);
-  } else if (providerPref === "google") {
-    // No silent fallback — use only Google results (even if empty due to error)
-    merged = googleScored;
+    // Merge all providers, score for relevance, then break ties using the
+    // fixed priority order (Google > Unsplash > Pixabay > Pexels).
+    const allScored = results.flatMap(({ result }) =>
+      (result?.images ?? []).map((img) => ({ ...img, score: scoreImage(img, orientation) }))
+    );
+    merged = allScored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (PROVIDER_PRIORITY[a.source] ?? 99) - (PROVIDER_PRIORITY[b.source] ?? 99);
+    });
   } else {
-    // No silent fallback — use only Pexels results
-    merged = pexelsScored;
+    // Single-provider mode — no silent fallback, use only that provider's results.
+    const chosen = results.find(({ name }) => name === providerPref)?.result;
+    merged = (chosen?.images ?? []).map((img) => ({ ...img, score: scoreImage(img, orientation) }));
   }
 
   const seen = new Set<string>();
@@ -623,13 +902,11 @@ async function searchAllProviders(
     dbg.filteredCount = fromThisProvider.length;
   }
 
-  const sources = final.map((img) => img.source);
-  const googleCount = sources.filter((s) => s === "google").length;
-  const pexelsCount = sources.filter((s) => s === "pexels").length;
+  const activeSources = new Set(final.map((img) => img.source));
   const primaryProvider =
-    googleCount > 0 && pexelsCount > 0 ? "multi" :
-    googleCount > 0 ? "google" :
-    pexelsCount > 0 ? "pexels" : "unknown";
+    activeSources.size > 1 ? "multi" :
+    activeSources.size === 1 ? [...activeSources][0] :
+    "unknown";
 
   return { images: final, primaryProvider, providerDebug: debugList };
 }
@@ -640,6 +917,8 @@ async function searchAllProviders(
 function getAvailableProviders(): string[] {
   const providers: string[] = ["auto"];
   if (GOOGLE_API_KEY && GOOGLE_CX) providers.push("google");
+  if (UNSPLASH_ACCESS_KEY) providers.push("unsplash");
+  if (PIXABAY_API_KEY) providers.push("pixabay");
   if (PEXELS_API_KEY) providers.push("pexels");
   return providers;
 }
@@ -668,7 +947,7 @@ router.post("/images/search", async (req, res): Promise<void> => {
     return;
   }
 
-  const cacheKey = getCacheKey(lineText, perPage, orientation);
+  const cacheKey = getCacheKey(lineText, perPage, orientation, provider);
   const cached = getFromCache(cacheKey);
   if (cached) {
     res.json(cached);
@@ -697,8 +976,9 @@ router.post("/images/search", async (req, res): Promise<void> => {
   const semantics = extractSemantics(englishBase);
 
   const providerPref: ProviderPref =
-    provider === "google" ? "google" :
-    provider === "pexels" ? "pexels" : "auto";
+    provider === "google" || provider === "unsplash" || provider === "pixabay" || provider === "pexels"
+      ? provider
+      : "auto";
 
   try {
     const { images, primaryProvider, providerDebug } = await searchAllProviders(

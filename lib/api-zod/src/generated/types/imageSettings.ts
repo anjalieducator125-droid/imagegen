@@ -7,7 +7,7 @@
  */
 
 export interface ImageSettings {
-  /** List of configured providers (auto, google, pexels) */
+  /** List of configured providers (auto, google, unsplash, pixabay, pexels) */
   availableProviders: string[];
   defaultProvider: string;
   maxPerPage?: number;

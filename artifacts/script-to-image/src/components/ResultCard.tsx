@@ -11,22 +11,22 @@ interface ResultCardProps {
   result: ImageSearchResult;
 }
 
+const PROVIDER_BADGE_STYLES: Record<string, { bg: string; icon: typeof Globe; label: string }> = {
+  google:   { bg: 'bg-blue-600/90',    icon: Globe,  label: 'Google' },
+  unsplash: { bg: 'bg-slate-800/90',   icon: Camera, label: 'Unsplash' },
+  pixabay:  { bg: 'bg-lime-600/90',    icon: ImageIcon, label: 'Pixabay' },
+  pexels:   { bg: 'bg-emerald-600/90', icon: Camera, label: 'Pexels' },
+};
+
 function ProviderBadge({ source }: { source: string }) {
-  if (source === 'google') {
-    return (
-      <span className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm">
-        <Globe className="w-2.5 h-2.5" /> G
-      </span>
-    );
-  }
-  if (source === 'pexels') {
-    return (
-      <span className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 bg-emerald-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm">
-        <Camera className="w-2.5 h-2.5" /> P
-      </span>
-    );
-  }
-  return null;
+  const style = PROVIDER_BADGE_STYLES[source];
+  if (!style) return null;
+  const Icon = style.icon;
+  return (
+    <span className={`absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 ${style.bg} text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm leading-tight backdrop-blur-sm`}>
+      <Icon className="w-2.5 h-2.5" /> {style.label}
+    </span>
+  );
 }
 
 function ScoreDot({ score }: { score: number }) {
@@ -76,6 +76,13 @@ function AnalysisPanel({ result }: { result: ImageSearchResult }) {
   );
 }
 
+const DEBUG_BADGE_COLORS: Record<string, string> = {
+  google:   'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+  unsplash: 'bg-slate-200 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
+  pixabay:  'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
+  pexels:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+};
+
 function ProviderDebugPanel({ debugList }: { debugList: ProviderDebugInfo[] }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
@@ -112,9 +119,7 @@ function ProviderDebugPanel({ debugList }: { debugList: ProviderDebugInfo[] }) {
               {/* Header row */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${
-                  dbg.provider === 'google'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                  DEBUG_BADGE_COLORS[dbg.provider] ?? 'bg-muted text-muted-foreground'
                 }`}>
                   {dbg.provider}
                 </span>
@@ -229,11 +234,19 @@ export function ResultCard({ result }: ResultCardProps) {
     }
   };
 
+  const SINGLE_PROVIDER_LABELS: Record<string, string> = {
+    google:   'Google Images',
+    unsplash: 'Unsplash',
+    pixabay:  'Pixabay',
+    pexels:   'Pexels',
+  };
+
   const providerLabel =
-    result.provider === 'multi'  ? 'Google + Pexels' :
-    result.provider === 'google' ? 'Google Images' :
-    result.provider === 'pexels' ? 'Pexels' :
-    result.provider;
+    result.provider === 'multi'
+      ? [...new Set(result.images.map((img: ImageResult) => img.source))]
+          .map((s) => SINGLE_PROVIDER_LABELS[s as string] ?? s)
+          .join(' + ')
+      : SINGLE_PROVIDER_LABELS[result.provider] ?? result.provider;
 
   const topScore = result.images.length > 0
     ? Math.max(...result.images.map((img: ImageResult) => img.score ?? 0))

@@ -107,7 +107,7 @@ components:
           description: The original script line text (any language)
         provider:
           type: string
-          description: "Provider preference: auto (best), google, pexels"
+          description: "Provider preference: auto (best), google, unsplash, pixabay, pexels"
           default: auto
         perPage:
           type: integer
@@ -181,7 +181,7 @@ components:
           type: string
         source:
           type: string
-          description: Provider name (pexels, google)
+          description: Provider name (google, unsplash, pixabay, pexels)
         width:
           type: integer
         height:
@@ -199,7 +199,7 @@ components:
       properties:
         provider:
           type: string
-          description: Provider name (google, pexels)
+          description: Provider name (google, unsplash, pixabay, pexels)
         query:
           type: string
           description: Exact query string sent to the provider
@@ -260,7 +260,7 @@ components:
           type: array
           items:
             type: string
-          description: List of configured providers (auto, google, pexels)
+          description: List of configured providers (auto, google, unsplash, pixabay, pexels)
         defaultProvider:
           type: string
         maxPerPage:
